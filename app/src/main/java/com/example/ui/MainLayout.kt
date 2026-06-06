@@ -737,6 +737,7 @@ fun RegistrationView(viewModel: AppViewModel) {
                 viewModel.tempUsername = username
                 viewModel.tempEmail = email
                 viewModel.tempDob = dob
+                viewModel.tempPassword = password
                 viewModel.tempGender = selectedGender
                 viewModel.selectedFlag = selectedFlag
                 viewModel.selectedTerritory = when (selectedFlag) {
@@ -978,11 +979,9 @@ fun LoginView(viewModel: AppViewModel) {
                     return@Button
                 }
                 
-                viewModel.performLogin(identifier) { success ->
+                viewModel.performLogin(identifier, password) { success ->
                     if (success) {
                         Toast.makeText(context, "Merit index synchronized!", Toast.LENGTH_SHORT).show()
-                    } else {
-                        Toast.makeText(context, "Access authorized for new session.", Toast.LENGTH_SHORT).show()
                     }
                 }
             },
@@ -1446,149 +1445,217 @@ fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostSt
     val showWelcome by viewModel.showDailyWelcome.collectAsState()
     val showExit by viewModel.showExitSummary.collectAsState()
 
+    var showSyncSettingsDialog by remember { mutableStateOf(false) }
+    val isBackendConnected by viewModel.isBackendConnected.collectAsState()
+    val backendBaseUrl by viewModel.backendBaseUrl.collectAsState()
+
     Scaffold(
         containerColor = DeepOceanSapphire,
         topBar = {
             TopAppBar(
                 title = {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(end = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.clickable {
+                            viewModel.selectTab(DashboardTab.ProfileAndElections)
+                            viewModel.setShowEditProfileDialog(true)
+                        }
                     ) {
-                        // Left Identity
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clickable {
-                                viewModel.selectTab(DashboardTab.ProfileAndElections)
-                                viewModel.setShowEditProfileDialog(true)
-                            }
+                        Box(
+                            modifier = Modifier.size(42.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = me?.flagEmoji ?: "🌍",
-                                fontSize = 28.sp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Column {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(CharcoalObsidian)
+                                    .border(1.dp, RegalGold, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
                                 Text(
-                                    text = me?.name ?: "Noble Citizen",
-                                    color = GhostWhite,
-                                    fontSize = 14.sp,
+                                    text = if (me?.profilePhoto?.isNotBlank() == true) me!!.profilePhoto.take(1).uppercase() else (me?.name ?: "N").take(1).uppercase(),
+                                    color = RegalGold,
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold
                                 )
-                                Card(
-                                    colors = CardDefaults.cardColors(containerColor = RegalGold.copy(alpha = 0.15f)),
-                                    shape = RoundedCornerShape(4.dp)
-                                ) {
-                                    Text(
-                                        text = "${me?.currentRank ?: "Citizen"} Rank",
-                                        color = RegalGold,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .offset(x = 1.dp, y = 1.dp)
+                                    .background(CharcoalObsidian, CircleShape)
+                                    .border(0.5.dp, RegalGold.copy(alpha = 0.5f), CircleShape)
+                                    .padding(horizontal = 2.dp, vertical = 0.5.dp)
+                            ) {
+                                Text(me?.flagEmoji ?: "🌍", fontSize = 8.sp)
                             }
                         }
-
-                        // Right Metrics counters
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            // KC
-                            Row(
-                                modifier = Modifier
-                                    .background(CharcoalObsidian, RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Column {
+                            Text(
+                                text = me?.name ?: "Noble Citizen",
+                                color = GhostWhite,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = RegalGold.copy(alpha = 0.15f)),
+                                shape = RoundedCornerShape(4.dp)
                             ) {
-                                Text("🧠 ", fontSize = 12.sp)
                                 Text(
-                                    "${me?.knowledgeCredits ?: 0} KC",
-                                    color = GhostWhite,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.width(6.dp))
-
-                            // CC
-                            Row(
-                                modifier = Modifier
-                                    .background(CharcoalObsidian, RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("🤝 ", fontSize = 12.sp)
-                                Text(
-                                    "${me?.contributionCredits ?: 0} CC",
+                                    text = "${me?.currentRank ?: "Citizen"} Rank",
                                     color = RegalGold,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                 )
                             }
+                        }
+                    }
+                },
+                actions = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(end = 8.dp)
+                    ) {
+                        // KC
+                        Row(
+                            modifier = Modifier
+                                .background(CharcoalObsidian, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("🧠", fontSize = 10.sp)
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(
+                                "${me?.knowledgeCredits ?: 0}",
+                                color = GhostWhite,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
 
-                            Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
 
-                            // Royal Welcome Trigger Bell
-                            IconButton(onClick = { viewModel.showWelcomeDialog() }) {
-                                Icon(Icons.Default.Notifications, contentDescription = "Alerts", tint = RegalGold)
+                        // CC
+                        Row(
+                            modifier = Modifier
+                                .background(CharcoalObsidian, RoundedCornerShape(8.dp))
+                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("🤝", fontSize = 10.sp)
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(
+                                "${me?.contributionCredits ?: 0}",
+                                color = RegalGold,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(2.dp))
+
+                        // Royal Welcome Trigger Bell
+                        IconButton(
+                            onClick = { viewModel.showWelcomeDialog() },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Default.Notifications, contentDescription = "Alerts", tint = RegalGold, modifier = Modifier.size(18.dp))
+                        }
+
+                        // Top Right 3-dot Dropdown Menu with Theme Toggle & Logout
+                        var showMenu by remember { mutableStateOf(false) }
+                        Box {
+                            IconButton(
+                                onClick = { showMenu = true },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.MoreVert,
+                                    contentDescription = "Menu",
+                                    tint = RegalGold,
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
-
-                            // Top Right 3-dot Dropdown Menu with Theme Toggle & Logout
-                            var showMenu by remember { mutableStateOf(false) }
-                            Box {
-                                IconButton(onClick = { showMenu = true }) {
-                                    Icon(
-                                        imageVector = Icons.Default.MoreVert,
-                                        contentDescription = "Menu",
-                                        tint = RegalGold
-                                    )
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false },
+                                modifier = Modifier.background(VelvetCard)
+                            ) {
+                                val currentTheme = viewModel.themeMode.collectAsState().value
+                                val themeLabel = when (currentTheme) {
+                                    AppThemeMode.TWILIGHT_DUSK -> "Theme: Twilight Dusk 🌅"
+                                    AppThemeMode.SPACE_ABYSS_DARK -> "Theme: Space Abyss 🌌"
+                                    AppThemeMode.MINIMALIST_SLATE_LIGHT -> "Theme: Slate Light ☀️"
+                                    AppThemeMode.DARK -> "Theme: Classic Dark 🌙"
+                                    AppThemeMode.LIGHT -> "Theme: Royal Blue Light 💙"
                                 }
-                                DropdownMenu(
-                                    expanded = showMenu,
-                                    onDismissRequest = { showMenu = false },
-                                    modifier = Modifier.background(VelvetCard)
-                                ) {
-                                    val currentTheme = viewModel.themeMode.collectAsState().value
-                                    val themeLabel = when (currentTheme) {
-                                        AppThemeMode.TWILIGHT_DUSK -> "Theme: Twilight Dusk 🌅"
-                                        AppThemeMode.SPACE_ABYSS_DARK -> "Theme: Space Abyss 🌌"
-                                        AppThemeMode.MINIMALIST_SLATE_LIGHT -> "Theme: Slate Light ☀️"
-                                    }
-                                    val themeIcon = when (currentTheme) {
-                                        AppThemeMode.TWILIGHT_DUSK -> Icons.Default.LightMode
-                                        AppThemeMode.SPACE_ABYSS_DARK -> Icons.Default.DarkMode
-                                        AppThemeMode.MINIMALIST_SLATE_LIGHT -> Icons.Default.LightMode
-                                    }
-                                    DropdownMenuItem(
-                                        text = { Text(themeLabel, color = GhostWhite) },
-                                        leadingIcon = {
-                                            Icon(
-                                                imageVector = themeIcon,
-                                                contentDescription = "Theme Toggle",
-                                                tint = RegalGold
-                                            )
-                                        },
-                                        onClick = {
-                                            showMenu = false
-                                            viewModel.toggleTheme()
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Logout", color = CrimsonRep) },
-                                        leadingIcon = {
-                                            Icon(
-                                                imageVector = Icons.Default.Logout,
-                                                contentDescription = "Logout",
-                                                tint = CrimsonRep
-                                            )
-                                        },
-                                        onClick = {
-                                            showMenu = false
-                                            viewModel.showExitDialog()
-                                        }
-                                    )
+                                val themeIcon = when (currentTheme) {
+                                    AppThemeMode.TWILIGHT_DUSK -> Icons.Default.LightMode
+                                    AppThemeMode.SPACE_ABYSS_DARK -> Icons.Default.DarkMode
+                                    AppThemeMode.MINIMALIST_SLATE_LIGHT -> Icons.Default.LightMode
+                                    AppThemeMode.DARK -> Icons.Default.DarkMode
+                                    AppThemeMode.LIGHT -> Icons.Default.LightMode
                                 }
+                                DropdownMenuItem(
+                                    text = { Text(themeLabel, color = GhostWhite) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = themeIcon,
+                                            contentDescription = "Theme Toggle",
+                                            tint = RegalGold
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        viewModel.toggleTheme()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { 
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text("Network Sync", color = GhostWhite)
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .background(
+                                                        if (isBackendConnected) EmeraldSuccess else CrimsonRep, 
+                                                        CircleShape
+                                                    )
+                                            )
+                                        }
+                                    },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Settings,
+                                            contentDescription = "Backend Sync Settings",
+                                            tint = RegalGold
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        showSyncSettingsDialog = true
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Logout", color = CrimsonRep) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Logout,
+                                            contentDescription = "Logout",
+                                            tint = CrimsonRep
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        viewModel.showExitDialog()
+                                    }
+                                )
                             }
                         }
                     }
@@ -1729,6 +1796,112 @@ fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostSt
         }
     }
 
+    // Modal: The Sync Settings
+    if (showSyncSettingsDialog) {
+        var urlInput by remember { mutableStateOf(backendBaseUrl) }
+        Dialog(onDismissRequest = { showSyncSettingsDialog = false }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = VelvetCard),
+                border = BorderStroke(1.5.dp, RegalGold),
+                shape = RoundedCornerShape(24.dp),
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp)
+                ) {
+                    Text(
+                        text = "Cosmos Network Sync",
+                        color = GhostWhite,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(12.dp)
+                                .background(
+                                    if (isBackendConnected) EmeraldSuccess else CrimsonRep,
+                                    CircleShape
+                                )
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isBackendConnected) "Connected Online" else "Offline / Disconnected",
+                            color = if (isBackendConnected) EmeraldSuccess else CrimsonRep,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    OutlinedTextField(
+                        value = urlInput,
+                        onValueChange = { urlInput = it },
+                        label = { Text("Server Base URL", color = RegalGold) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = GhostWhite,
+                            unfocusedTextColor = GhostWhite,
+                            focusedBorderColor = RegalGold,
+                            unfocusedBorderColor = RegalGold.copy(alpha = 0.5f)
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    
+                    Text("Standard emulator hosts:", color = MutedSlate, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { urlInput = "http://10.0.2.2:4000/" },
+                            colors = ButtonDefaults.buttonColors(containerColor = RegalGold.copy(alpha = 0.2f)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("10.0.2.2", fontSize = 11.sp, color = RegalGold)
+                        }
+                        Button(
+                            onClick = { urlInput = "http://localhost:4000/" },
+                            colors = ButtonDefaults.buttonColors(containerColor = RegalGold.copy(alpha = 0.2f)),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("localhost", fontSize = 11.sp, color = RegalGold)
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(20.dp))
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Button(
+                            onClick = { 
+                                viewModel.updateBackendUrl(urlInput)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = RegalGold),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Connect", color = CharcoalObsidian, fontWeight = FontWeight.Bold)
+                        }
+                        
+                        Button(
+                            onClick = { showSyncSettingsDialog = false },
+                            colors = ButtonDefaults.buttonColors(containerColor = CharcoalObsidian),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Close", color = GhostWhite)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Modal: The Exit Summary
     if (showExit) {
         Dialog(onDismissRequest = { viewModel.dismissExitDialog() }) {
@@ -1839,8 +2012,8 @@ fun ProfileDisplayDialog(user: UserEntity, viewModel: AppViewModel, onClose: () 
 
                     Box(
                         modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .offset(y = 10.dp)
+                            .align(Alignment.BottomEnd)
+                            .offset(x = (-4).dp, y = (-4).dp)
                             .background(CharcoalObsidian, CircleShape)
                             .border(1.dp, RegalGold.copy(alpha = 0.5f), CircleShape)
                             .padding(horizontal = 4.dp, vertical = 2.dp)
@@ -2085,6 +2258,17 @@ fun ProfileDisplayDialog(user: UserEntity, viewModel: AppViewModel, onClose: () 
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("EDIT PERSONAL PROFILE", color = RegalGold, fontSize = 11.sp)
                         }
+                    } else {
+                        Button(
+                            onClick = { viewModel.startChatWithUser(user) },
+                            colors = ButtonDefaults.buttonColors(containerColor = RegalGold),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                        ) {
+                            Icon(Icons.Default.Forum, contentDescription = null, tint = CharcoalObsidian, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("INITIALIZE DIALOGUE CONNECTION", color = CharcoalObsidian, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
 
@@ -2238,8 +2422,37 @@ fun PublicSquareTab(viewModel: AppViewModel) {
                                     viewModel.showProfileForUserByName(post.authorName, post.authorFlag, post.authorRank, post.authorTerritory)
                                 }
                             ) {
-                                Text(post.authorFlag, fontSize = 24.sp)
-                                Spacer(modifier = Modifier.width(8.dp))
+                                Box(
+                                    modifier = Modifier.size(46.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(CircleShape)
+                                            .background(CharcoalObsidian)
+                                            .border(1.dp, RegalGold, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = post.authorName.take(1).uppercase(),
+                                            color = RegalGold,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .offset(x = 2.dp, y = 2.dp)
+                                            .background(CharcoalObsidian, CircleShape)
+                                            .border(0.5.dp, RegalGold.copy(alpha = 0.5f), CircleShape)
+                                            .padding(horizontal = 3.dp, vertical = 1.dp)
+                                    ) {
+                                        Text(post.authorFlag, fontSize = 10.sp)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
                                 Column {
                                     Text(
                                         text = "${post.authorName} (${post.authorUsername})",
@@ -2474,8 +2687,37 @@ fun PublicSquareTab(viewModel: AppViewModel) {
                                                 viewModel.showProfileForUserByName(comment.authorName, comment.authorFlag, comment.authorRank)
                                             }
                                         ) {
-                                            Text(comment.authorFlag, fontSize = 16.sp)
-                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Box(
+                                                modifier = Modifier.size(36.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(30.dp)
+                                                        .clip(CircleShape)
+                                                        .background(CharcoalObsidian)
+                                                        .border(1.dp, RegalGold, CircleShape),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = comment.authorName.take(1).uppercase(),
+                                                        color = RegalGold,
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+                                                Box(
+                                                    modifier = Modifier
+                                                        .align(Alignment.BottomEnd)
+                                                        .offset(x = 1.dp, y = 1.dp)
+                                                        .background(CharcoalObsidian, CircleShape)
+                                                        .border(0.5.dp, RegalGold.copy(alpha = 0.5f), CircleShape)
+                                                        .padding(horizontal = 2.dp, vertical = 0.5.dp)
+                                                ) {
+                                                    Text(comment.authorFlag, fontSize = 8.sp)
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(8.dp))
                                             Text(comment.authorName, color = RegalGold, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                             Spacer(modifier = Modifier.width(6.dp))
                                             Text(comment.authorRank, color = MutedSlate, fontSize = 9.sp)
@@ -2516,7 +2758,6 @@ fun PublicSquareTab(viewModel: AppViewModel) {
                                         viewModel.addComment(postId, trimmedMsg)
                                     }
                                     commentText = ""
-                                    viewModel.selectPostForComments(null) // Close public comment dialog on send
                                 }
                             },
                             modifier = Modifier
@@ -2855,7 +3096,36 @@ fun MessagingTab(viewModel: AppViewModel) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(room.participantFlag, fontSize = 28.sp)
+                                    Box(
+                                        modifier = Modifier.size(46.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(38.dp)
+                                                .clip(CircleShape)
+                                                .background(CharcoalObsidian)
+                                                .border(1.dp, RegalGold, CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = room.participantName.take(1).uppercase(),
+                                                color = RegalGold,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.BottomEnd)
+                                                .offset(x = 2.dp, y = 2.dp)
+                                                .background(CharcoalObsidian, CircleShape)
+                                                .border(0.5.dp, RegalGold.copy(alpha = 0.5f), CircleShape)
+                                                .padding(horizontal = 2.dp, vertical = 0.5.dp)
+                                        ) {
+                                            Text(room.participantFlag, fontSize = 8.sp)
+                                        }
+                                    }
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column {
                                         Text(room.participantName, color = GhostWhite, fontSize = 15.sp, fontWeight = FontWeight.Bold)
@@ -2920,7 +3190,36 @@ fun MessagingTab(viewModel: AppViewModel) {
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.blur(if (activeRooms.size >= 3) 4.dp else 0.dp) // Blur effect representing structural limits
                                 ) {
-                                    Text(room.participantFlag, fontSize = 24.sp)
+                                    Box(
+                                        modifier = Modifier.size(46.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(38.dp)
+                                                .clip(CircleShape)
+                                                .background(CharcoalObsidian)
+                                                .border(1.dp, RegalGold, CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = room.participantName.take(1).uppercase(),
+                                                color = RegalGold,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.BottomEnd)
+                                                .offset(x = 2.dp, y = 2.dp)
+                                                .background(CharcoalObsidian, CircleShape)
+                                                .border(0.5.dp, RegalGold.copy(alpha = 0.5f), CircleShape)
+                                                .padding(horizontal = 2.dp, vertical = 0.5.dp)
+                                        ) {
+                                            Text(room.participantFlag, fontSize = 8.sp)
+                                        }
+                                    }
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column {
                                         Text(room.participantName, color = GhostWhite, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
@@ -2968,8 +3267,37 @@ fun MessagingTab(viewModel: AppViewModel) {
                         },
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(activeRoom?.participantFlag ?: "🌍", fontSize = 24.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier.size(46.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .clip(CircleShape)
+                                    .background(CharcoalObsidian)
+                                    .border(1.dp, RegalGold, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = (activeRoom?.participantName ?: "C").take(1).uppercase(),
+                                    color = RegalGold,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .offset(x = 2.dp, y = 2.dp)
+                                    .background(CharcoalObsidian, CircleShape)
+                                    .border(0.5.dp, RegalGold.copy(alpha = 0.5f), CircleShape)
+                                    .padding(horizontal = 2.dp, vertical = 0.5.dp)
+                            ) {
+                                Text(activeRoom?.participantFlag ?: "🌍", fontSize = 8.sp)
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(activeRoom?.participantName ?: "Conversation partner", color = GhostWhite, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                             Text(activeRoom?.participantRank ?: "Citizen", color = RegalGold, fontSize = 11.sp)
@@ -3214,8 +3542,8 @@ fun ElectionsAndProfileTab(viewModel: AppViewModel) {
                                 }
                                 Box(
                                     modifier = Modifier
-                                        .align(Alignment.BottomCenter)
-                                        .offset(y = 10.dp)
+                                        .align(Alignment.BottomEnd)
+                                        .offset(x = (-2).dp, y = (-2).dp)
                                         .background(CharcoalObsidian, CircleShape)
                                         .border(1.dp, RegalGold.copy(alpha = 0.5f), CircleShape)
                                         .padding(horizontal = 4.dp, vertical = 2.dp)
@@ -3593,13 +3921,13 @@ fun ElectionsAndProfileTab(viewModel: AppViewModel) {
                                     }
                                     Box(
                                         modifier = Modifier
-                                            .align(Alignment.BottomCenter)
-                                            .offset(y = 4.dp)
+                                            .align(Alignment.BottomEnd)
+                                            .offset(x = 2.dp, y = 2.dp)
                                             .background(CharcoalObsidian, CircleShape)
                                             .border(0.5.dp, RegalGold.copy(alpha = 0.5f), CircleShape)
-                                            .padding(horizontal = 3.dp, vertical = 1.dp)
+                                            .padding(horizontal = 2.dp, vertical = 0.5.dp)
                                     ) {
-                                        Text(visitor.visitorFlag, fontSize = 10.sp)
+                                        Text(visitor.visitorFlag, fontSize = 8.sp)
                                     }
                                 }
                                 Spacer(modifier = Modifier.width(12.dp))
@@ -4408,10 +4736,11 @@ fun MissionsTab(viewModel: AppViewModel) {
                                 Button(
                                     onClick = { viewModel.contributeToMission(mission.id, 10) },
                                     colors = ButtonDefaults.buttonColors(containerColor = RegalGold),
-                                    shape = RoundedCornerShape(6.dp),
-                                    modifier = Modifier.height(28.dp)
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.height(36.dp),
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                                 ) {
-                                    Text("ALLOCATE 10 CC", color = CharcoalObsidian, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                    Text("ALLOCATE 10 CC", color = CharcoalObsidian, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
                         }

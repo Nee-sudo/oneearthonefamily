@@ -118,7 +118,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val showExitSummary: StateFlow<Boolean> = _showExitSummary.asStateFlow()
 
     // Theme toggle state
-    private val _themeMode = MutableStateFlow(AppThemeMode.TWILIGHT_DUSK)
+    private val _themeMode = MutableStateFlow(AppThemeMode.DARK)
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
 
     private val _isDarkTheme = MutableStateFlow(true)
@@ -126,11 +126,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleTheme() {
         _themeMode.value = when (_themeMode.value) {
+            AppThemeMode.DARK -> AppThemeMode.TWILIGHT_DUSK
             AppThemeMode.TWILIGHT_DUSK -> AppThemeMode.SPACE_ABYSS_DARK
             AppThemeMode.SPACE_ABYSS_DARK -> AppThemeMode.MINIMALIST_SLATE_LIGHT
-            AppThemeMode.MINIMALIST_SLATE_LIGHT -> AppThemeMode.TWILIGHT_DUSK
+            AppThemeMode.MINIMALIST_SLATE_LIGHT -> AppThemeMode.LIGHT
+            AppThemeMode.LIGHT -> AppThemeMode.DARK
         }
-        _isDarkTheme.value = _themeMode.value != AppThemeMode.MINIMALIST_SLATE_LIGHT
+        _isDarkTheme.value = _themeMode.value != AppThemeMode.MINIMALIST_SLATE_LIGHT && _themeMode.value != AppThemeMode.LIGHT
+    }
+
+    // API/Backend states and dynamic controls
+    private val _isBackendConnected = MutableStateFlow(false)
+    val isBackendConnected: StateFlow<Boolean> = _isBackendConnected.asStateFlow()
+
+    private val _backendBaseUrl = MutableStateFlow(ApiClient.getBaseUrl())
+    val backendBaseUrl: StateFlow<String> = _backendBaseUrl.asStateFlow()
+
+    fun updateBackendUrl(newUrl: String) {
+        ApiClient.updateBaseUrl(newUrl)
+        _backendBaseUrl.value = ApiClient.getBaseUrl()
+        checkConnectionOnce()
     }
 
     // Setup Form States
@@ -138,6 +153,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var tempUsername = ""
     var tempEmail = ""
     var tempDob = ""
+    var tempPassword = ""
     var tempGender = "Male" // "Male", "Female", "Prefer Not to Say", etc.
     var selectedTerritory = ""
     var selectedFlag = ""
@@ -157,6 +173,63 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     init {
         // Prepopulate database with rich data for demonstration
         prepopulateDb()
+        // Start backend connection monitoring
+        startBackendHealthChecking()
+    }
+
+    private fun checkConnectionOnce() {
+        viewModelScope.launch {
+            try {
+                val response = ApiClient.getService().checkHealth()
+                _isBackendConnected.value = (response.status == "ok" || response.status.isNotBlank())
+            } catch (e: Exception) {
+                _isBackendConnected.value = false
+            }
+        }
+    }
+
+    private fun startBackendHealthChecking() {
+        viewModelScope.launch {
+            while (true) {
+                try {
+                    val response = ApiClient.getService().checkHealth()
+                    val wasConnected = _isBackendConnected.value
+                    _isBackendConnected.value = (response.status == "ok" || response.status.isNotBlank())
+                    if (!wasConnected && _isBackendConnected.value) {
+                        _toastMessage.emit("Connected to One Earth Network Backend!")
+                        syncAllWithBackend()
+                    }
+                } catch (e: Exception) {
+                    _isBackendConnected.value = false
+                }
+                kotlinx.coroutines.delay(8000) // check every 8 seconds
+            }
+        }
+    }
+
+    fun syncAllWithBackend() {
+        viewModelScope.launch {
+            if (!_isBackendConnected.value) return@launch
+            try {
+                // 1. Sync Posts from Backend
+                val remotePosts = ApiClient.getService().getPosts()
+                if (remotePosts.isNotEmpty()) {
+                    remotePosts.forEach { post ->
+                        postDao.insertPost(post)
+                    }
+                }
+
+                // 2. Sync Chat Rooms from Backend
+                val remoteRooms = ApiClient.getService().getChatRooms()
+                if (remoteRooms.isNotEmpty()) {
+                    remoteRooms.forEach { room ->
+                        chatDao.insertRoom(room)
+                    }
+                }
+            } catch (e: Exception) {
+                // Fail-safe
+            }
+        }
     }
 
     fun getRankFromCredits(kc: Int, cc: Int): String {
@@ -233,6 +306,69 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _selectedProfileUser.value = null
     }
 
+    fun startChatWithUser(user: UserEntity) {
+        viewModelScope.launch {
+            // Check if there is already a room with this participantName
+            val allRooms = chatDao.getAllRoomsFlow().first()
+            val existingRoom = allRooms.find { it.participantName.lowercase() == user.name.lowercase() }
+            
+            if (existingRoom != null) {
+                // If it exists, make sure it is active or swap/select it
+                swapOrActivateRoom(existingRoom.id)
+                _currentTab.value = DashboardTab.Messaging
+                closeProfileDialog()
+                return@launch
+            }
+            
+            // Otherwise, we create a new room!
+            // First check how many active rooms exist. If we have 3, let the new room start in waiting queue.
+            val activeRoomsCount = allRooms.count { it.isActive }
+            val makeActive = activeRoomsCount < 3
+            
+            val newRoom = ChatRoomEntity(
+                roomName = "Dialogue with ${user.name}",
+                participantName = user.name,
+                participantFlag = user.flagEmoji,
+                participantRank = user.currentRank,
+                participantTerritory = user.territory,
+                lastMessage = "Establish direct focus dialogue.",
+                isActive = makeActive,
+                isWaiting = !makeActive
+            )
+            
+            val newRoomId = chatDao.insertRoom(newRoom).toInt()
+            // Add a welcome seed message
+            val seedMessage = ChatMessageEntity(
+                roomId = newRoomId,
+                senderId = "other",
+                senderName = user.name,
+                messageText = "Greetings. I am honored to synchronize minds with you.",
+                timestamp = System.currentTimeMillis()
+            )
+            chatDao.insertMessage(seedMessage)
+            
+            _selectedRoomId.value = newRoomId
+            _currentTab.value = DashboardTab.Messaging
+            closeProfileDialog()
+            
+            if (makeActive) {
+                _toastMessage.emit("Focus Connection initialized with ${user.name}!")
+            } else {
+                _toastMessage.emit("${user.name} queued. Terminal capacity at limit (Max 3). Swap connections in Messaging tab!")
+            }
+
+            // Sync with backend
+            if (_isBackendConnected.value) {
+                try {
+                    val remoteRoom = ApiClient.getService().createChatRoom(newRoom.copy(id = newRoomId))
+                    ApiClient.getService().sendChatMessage(remoteRoom.id, seedMessage)
+                } catch (e: Exception) {
+                    // Fail-safe
+                }
+            }
+        }
+    }
+
     fun updateUserProfile(
         name: String,
         username: String,
@@ -253,53 +389,108 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             )
             saveUserAndRecalculateRank(updated)
             _toastMessage.emit("Profile paradigm synchronized successfully!")
+
+            if (_isBackendConnected.value) {
+                try {
+                    ApiClient.getService().updateUserProfile(me.email.lowercase(), updated)
+                } catch (e: Exception) {
+                    // Fail-safe
+                }
+            }
         }
     }
 
-    fun performLogin(identifier: String, onResult: (Boolean) -> Unit) {
+    fun performLogin(identifier: String, passphraseInput: String, onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
             val lowercaseId = identifier.trim().lowercase()
+
+            // Try real server login first if backend is active
+            if (_isBackendConnected.value) {
+                try {
+                    val remoteUser = ApiClient.getService().loginUser(LoginRequest(lowercaseId, passphraseInput))
+                    val clonedMe = remoteUser.copy(id = "me")
+                    saveUserAndRecalculateRank(clonedMe)
+                    userDao.insertUser(remoteUser.copy(id = remoteUser.email.lowercase()))
+                    userDao.insertUser(remoteUser.copy(id = "user_${remoteUser.username.lowercase().removePrefix("@")}"))
+                    _toastMessage.emit("Welcome Back (Sync Active), ${remoteUser.name}!")
+                    _currentScreen.value = Screen.MainDashboard
+                    onResult(true)
+                    return@launch
+                } catch (e: Exception) {
+                    if (e.message?.contains("401") == true || e.message?.contains("unauthorized") == true) {
+                        _toastMessage.emit("Authentication Error: Passphrase invalid or server denied access.")
+                        onResult(false)
+                        return@launch
+                    }
+                }
+            }
             
-            // Try matching pre-populated user by email or username
+            // Try matching pre-populated user or registered user in Room
             val matchedUser = when {
-                lowercaseId.contains("arjun") || lowercaseId.contains("gandhi") -> userDao.getUserById("gandhi_avatar")
-                lowercaseId.contains("clara") -> userDao.getUserById("clara_nobel")
-                lowercaseId.contains("kofi") -> userDao.getUserById("kenya_leader")
-                else -> null
+                lowercaseId == "arjun" || lowercaseId == "gandhi" || lowercaseId.contains("arjun") -> userDao.getUserById("gandhi_avatar")
+                lowercaseId == "clara" || lowercaseId.contains("clara") -> userDao.getUserById("clara_nobel")
+                lowercaseId == "kofi" || lowercaseId.contains("kofi") -> userDao.getUserById("kenya_leader")
+                else -> {
+                    // Try exact email lookup
+                    var u = userDao.getUserById(lowercaseId)
+                    if (u == null) {
+                        // Try exact username lookup (stripping @)
+                        val handle = lowercaseId.removePrefix("@")
+                        u = userDao.getUserById("user_$handle")
+                    }
+                    u
+                }
             }
 
             if (matchedUser != null) {
-                // Symmetrical clone: replace the "me" user entity with their details!
-                val clonedMe = matchedUser.copy(id = "me")
-                saveUserAndRecalculateRank(clonedMe)
-                _toastMessage.emit("Welcome Back, ${matchedUser.name}!")
+                // Check if passphrase matches
+                if (matchedUser.passphrase == passphraseInput || (matchedUser.passphrase == "1234" && passphraseInput.isEmpty())) {
+                    val clonedMe = matchedUser.copy(id = "me")
+                    saveUserAndRecalculateRank(clonedMe)
+                    _toastMessage.emit("Welcome Back, ${matchedUser.name}!")
+                    _currentScreen.value = Screen.MainDashboard
+                    onResult(true)
+                } else {
+                    _toastMessage.emit("Fail: Passport passphrase mismatch. Try '1234' or your registered password.")
+                    onResult(false)
+                }
+            } else {
+                // If user doesn't exist, we can register them dynamically or allow instant secure verification!
+                val cleanUsername = if (identifier.contains("@")) identifier.substringBefore("@") else identifier
+                val newMe = UserEntity(
+                    id = "me",
+                    name = cleanUsername.replaceFirstChar { it.uppercase() },
+                    username = if (cleanUsername.startsWith("@")) cleanUsername else "@$cleanUsername",
+                    email = if (identifier.contains("@")) identifier else "$identifier@oneearth.io",
+                    dob = "1995-10-10",
+                    territory = "Global",
+                    flagEmoji = "🌍",
+                    personalityTraits = "Citizen,Expert,Leader,Visionary,Creator",
+                    onboardingCompleted = true,
+                    citizenOathAccepted = true,
+                    knowledgeCredits = 75,
+                    contributionCredits = 40,
+                    reputationScore = 98,
+                    passphrase = passphraseInput
+                )
+                
+                // Also save under their username + email persistently for the future
+                saveUserAndRecalculateRank(newMe)
+                userDao.insertUser(newMe.copy(id = newMe.email.lowercase()))
+                userDao.insertUser(newMe.copy(id = "user_${newMe.username.lowercase().removePrefix("@")}"))
+                
+                // Hit backend to register!
+                if (_isBackendConnected.value) {
+                    try {
+                        ApiClient.getService().registerUser(newMe)
+                    } catch (e: Exception) {
+                        // silently fail on backend registration fallback
+                    }
+                }
+
+                _toastMessage.emit("Welcome to the Empire, ${newMe.name}! Identity registered.")
                 _currentScreen.value = Screen.MainDashboard
                 onResult(true)
-            } else {
-                // If it is any other key, just create/ensure "me" exists or let them in!
-                val existingMe = userDao.getUserById("me")
-                if (existingMe == null) {
-                    val cleanUsername = if (identifier.contains("@")) identifier.substringBefore("@") else identifier
-                    val defaultMe = UserEntity(
-                        id = "me",
-                        name = cleanUsername.replaceFirstChar { it.uppercase() },
-                        username = if (cleanUsername.startsWith("@")) cleanUsername else "@$cleanUsername",
-                        email = if (identifier.contains("@")) identifier else "$identifier@oneearth.io",
-                        dob = "1995-10-10",
-                        territory = "Global",
-                        flagEmoji = "🌍",
-                        personalityTraits = "Citizen,Expert,Leader,Visionary,Creator",
-                        onboardingCompleted = true,
-                        citizenOathAccepted = true,
-                        knowledgeCredits = 75,
-                        contributionCredits = 40,
-                        reputationScore = 98
-                    )
-                    saveUserAndRecalculateRank(defaultMe)
-                }
-                _toastMessage.emit("Identity synchronized: Logged in.")
-                _currentScreen.value = Screen.MainDashboard
-                onResult(false)
             }
         }
     }
@@ -336,10 +527,30 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectPostForComments(postId: Int?) {
         _selectedCommentsPostId.value = postId
+        if (postId != null && _isBackendConnected.value) {
+            viewModelScope.launch {
+                try {
+                    val remoteComments = ApiClient.getService().getComments(postId)
+                    remoteComments.forEach { commentDao.insertComment(it) }
+                } catch (e: Exception) {
+                    // safe fallback
+                }
+            }
+        }
     }
 
     fun selectRoom(roomId: Int?) {
         _selectedRoomId.value = roomId
+        if (roomId != null && _isBackendConnected.value) {
+            viewModelScope.launch {
+                try {
+                    val remoteMessages = ApiClient.getService().getChatMessages(roomId)
+                    remoteMessages.forEach { chatDao.insertMessage(it) }
+                } catch (e: Exception) {
+                    // safe fallback
+                }
+            }
+        }
     }
 
     // Interactive Quiz (Knowledge Arena Leveling)
@@ -451,9 +662,29 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 citizenOathAccepted = true,
                 knowledgeCredits = 50, // Starting bonus
                 contributionCredits = 25,
-                reputationScore = 98
+                reputationScore = 98,
+                passphrase = tempPassword
             )
+            // Save current session
             saveUserAndRecalculateRank(user)
+
+            // Register in the permanent database under their email & username for real sign-in
+            val emailRegId = tempEmail.trim().lowercase()
+            val userRegId = tempUsername.trim().lowercase().removePrefix("@")
+            
+            userDao.insertUser(user.copy(id = emailRegId))
+            userDao.insertUser(user.copy(id = "user_$userRegId"))
+
+            // Try real server registration if backend is active
+            if (_isBackendConnected.value) {
+                try {
+                    ApiClient.getService().registerUser(user)
+                    _toastMessage.emit("Security Passport registered online.")
+                } catch (e: Exception) {
+                    _toastMessage.emit("Registered locally. Cloud sync pending connection.")
+                }
+            }
+
             _showDailyWelcome.value = true
             _currentScreen.value = Screen.MainDashboard
         }
@@ -525,6 +756,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             postDao.updatePost(updatedPost)
+
+            // Submit reaction to server
+            if (_isBackendConnected.value) {
+                try {
+                    val me = userDao.getUserById("me")
+                    val remoteUpdated = ApiClient.getService().reactToPost(postId, ReactionRequest(me?.id ?: "me", type))
+                    postDao.updatePost(remoteUpdated)
+                } catch (e: Exception) {
+                    // Fail-safe
+                }
+            }
         }
     }
 
@@ -564,6 +806,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 content = commentText
             )
             commentDao.insertComment(comment)
+
+            // Submit to backend!
+            if (_isBackendConnected.value) {
+                try {
+                    ApiClient.getService().addComment(postId, comment)
+                    val remoteComments = ApiClient.getService().getComments(postId)
+                    remoteComments.forEach { commentDao.insertComment(it) }
+                } catch (e: Exception) {
+                    _toastMessage.emit("Comment recorded offline. Live synchronization pending.")
+                }
+            }
         }
     }
 
@@ -585,6 +838,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             )
             postDao.insertPost(post)
             _toastMessage.emit("Broadcasting entry into the Public Square!")
+
+            // Post to backend!
+            if (_isBackendConnected.value) {
+                try {
+                    val created = ApiClient.getService().createPost(post)
+                    postDao.insertPost(created)
+                } catch (e: Exception) {
+                    _toastMessage.emit("Broadcasting synchronized offline.")
+                }
+            }
         }
     }
 
@@ -667,21 +930,43 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 ))
             }
 
+            // Sync message to backend
+            if (_isBackendConnected.value) {
+                try {
+                    ApiClient.getService().sendChatMessage(roomId, message)
+                    val remoteMessages = ApiClient.getService().getChatMessages(roomId)
+                    remoteMessages.forEach { chatDao.insertMessage(it) }
+                } catch (e: Exception) {
+                    // offline fallback
+                }
+            }
+
             // Mock automatic reply simulation for vibrant interactions
             viewModelScope.launch {
                 kotlinx.coroutines.delay(1200)
                 val reply = getDynamicPartnerReply(room?.participantName ?: "Citizen")
-                chatDao.insertMessage(ChatMessageEntity(
+                val replyMessage = ChatMessageEntity(
                     roomId = roomId,
                     senderId = "other",
                     senderName = room?.participantName ?: "Citizen",
                     messageText = reply
-                ))
+                )
+                chatDao.insertMessage(replyMessage)
+                
                 if (room != null) {
                     chatDao.updateRoom(room.copy(
                         lastMessage = reply,
                         lastMessageTime = System.currentTimeMillis()
                     ))
+                }
+
+                // Push dynamic reply into backend too!
+                if (_isBackendConnected.value) {
+                    try {
+                        ApiClient.getService().sendChatMessage(roomId, replyMessage)
+                    } catch (e: Exception) {
+                        // safe fallback
+                    }
                 }
             }
         }

@@ -33,7 +33,8 @@ data class UserEntity(
     val campaignVision: String = "",
     val votesCount: Int = 0,
     val hasVoted: Boolean = false,
-    val profilePhoto: String = ""
+    val profilePhoto: String = "",
+    val passphrase: String = "1234"
 )
 
 @Entity(tableName = "posts")

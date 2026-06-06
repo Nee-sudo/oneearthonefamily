@@ -6,7 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 enum class AppThemeMode {
-    TWILIGHT_DUSK, SPACE_ABYSS_DARK, MINIMALIST_SLATE_LIGHT
+    TWILIGHT_DUSK, SPACE_ABYSS_DARK, MINIMALIST_SLATE_LIGHT, DARK, LIGHT
 }
 
 private val TwilightDuskScheme = darkColorScheme(
@@ -24,17 +24,17 @@ private val TwilightDuskScheme = darkColorScheme(
 )
 
 private val SpaceAbyssDarkScheme = darkColorScheme(
-    primary = RegalGold,
-    secondary = ElectricBlue,
+    primary = Color(0xFFD4AF37),
+    secondary = Color(0xFF3B82F6),
     tertiary = Color(0xFF8B5CF6), // Cosmic Purple
     background = Color(0xFF030712), // Abyss Black
     surface = Color(0xFF111827), // Deep Slate/Blue Card
     onPrimary = Color(0xFF030712),
     onSecondary = Color(0xFFFFFFFF),
-    onTertiary = GhostWhite,
-    onBackground = GhostWhite,
-    onSurface = GhostWhite,
-    error = CrimsonRep
+    onTertiary = Color(0xFFF1F5F9),
+    onBackground = Color(0xFFF1F5F9),
+    onSurface = Color(0xFFF1F5F9),
+    error = Color(0xFFEF4444)
 )
 
 private val MinimalistSlateLightScheme = androidx.compose.material3.lightColorScheme(
@@ -48,18 +48,49 @@ private val MinimalistSlateLightScheme = androidx.compose.material3.lightColorSc
     onTertiary = Color(0xFF0F172A),
     onBackground = Color(0xFF0F172A),
     onSurface = Color(0xFF0F172A),
-    error = CrimsonRep
+    error = Color(0xFFEF4444)
+)
+
+private val ClassicDarkScheme = darkColorScheme(
+    primary = Color(0xFFD4AF37),
+    secondary = Color(0xFFF59E0B),
+    tertiary = Color(0xFF3B82F6),
+    background = Color(0xFF070B19),
+    surface = Color(0xFF0B1126),
+    onPrimary = Color(0xFF020408),
+    onSecondary = Color(0xFF020408),
+    onTertiary = Color(0xFFF1F5F9),
+    onBackground = Color(0xFFF1F5F9),
+    onSurface = Color(0xFFF1F5F9),
+    error = Color(0xFFEF4444)
+)
+
+private val LightBlueWhiteScheme = androidx.compose.material3.lightColorScheme(
+    primary = Color(0xFF1E40AF), // Royal Blue
+    secondary = Color(0xFF2563EB), // Blue Accent
+    tertiary = Color(0xFF3B82F6),
+    background = Color(0xFFF0F6FC), // Light Blue-White
+    surface = Color(0xFFFFFFFF), // White Card
+    onPrimary = Color(0xFFFFFFFF),
+    onSecondary = Color(0xFFFFFFFF),
+    onTertiary = Color(0xFF0F2942),
+    onBackground = Color(0xFF0F2942),
+    onSurface = Color(0xFF0F2942),
+    error = Color(0xFFEF4444)
 )
 
 @Composable
 fun MyApplicationTheme(
-    themeMode: AppThemeMode = AppThemeMode.TWILIGHT_DUSK,
+    themeMode: AppThemeMode = AppThemeMode.DARK,
     content: @Composable () -> Unit,
 ) {
+    ThemeState.mode = themeMode
     val colors = when (themeMode) {
         AppThemeMode.TWILIGHT_DUSK -> TwilightDuskScheme
         AppThemeMode.SPACE_ABYSS_DARK -> SpaceAbyssDarkScheme
         AppThemeMode.MINIMALIST_SLATE_LIGHT -> MinimalistSlateLightScheme
+        AppThemeMode.DARK -> ClassicDarkScheme
+        AppThemeMode.LIGHT -> LightBlueWhiteScheme
     }
     MaterialTheme(
         colorScheme = colors,
