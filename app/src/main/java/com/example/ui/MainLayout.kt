@@ -3066,7 +3066,12 @@ fun MessagingTab(viewModel: AppViewModel) {
             )
 
             // ACTIVE CHATS LIST
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 if (activeRooms.isEmpty()) {
                     item {
                         Card(
@@ -3244,7 +3249,7 @@ fun MessagingTab(viewModel: AppViewModel) {
     } else {
         // Individual Chat messaging room interface view
         val activeRoom = (activeRooms + waitingRooms).find { it.id == selectedId }
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize().imePadding()) {
             // Room Header strip - allows clicking profile details of chat partner
             Row(
                 modifier = Modifier
@@ -3343,6 +3348,14 @@ fun MessagingTab(viewModel: AppViewModel) {
                         val clipboardManager = LocalClipboardManager.current
                         val localContext = LocalContext.current
                         val textToCopy = message.messageText.trim()
+                        val messageTimeAndDay = remember(message.timestamp) {
+                            try {
+                                val sdf = java.text.SimpleDateFormat("EEEE, hh:mm a", java.util.Locale.getDefault())
+                                sdf.format(java.util.Date(message.timestamp))
+                            } catch (e: Exception) {
+                                ""
+                            }
+                        }
                         Card(
                             colors = CardDefaults.cardColors(
                                 containerColor = if (isMe) RegalGold.copy(alpha = 0.15f) else VelvetCard
@@ -3367,24 +3380,36 @@ fun MessagingTab(viewModel: AppViewModel) {
                                     color = GhostWhite,
                                     fontSize = 14.sp
                                 )
-                                Spacer(modifier = Modifier.height(4.dp))
+                                Spacer(modifier = Modifier.height(6.dp))
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.End,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.ContentCopy,
-                                        contentDescription = "Copy message",
-                                        tint = RegalGold.copy(alpha = 0.6f),
-                                        modifier = Modifier.size(11.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(3.dp))
+                                    // Day & Time
                                     Text(
-                                        text = "Click to copy",
+                                        text = messageTimeAndDay,
                                         color = MutedSlate,
-                                        fontSize = 8.sp
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Normal
                                     )
+                                    // Minimalist copy trigger
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ContentCopy,
+                                            contentDescription = "Copy message",
+                                            tint = RegalGold.copy(alpha = 0.6f),
+                                            modifier = Modifier.size(11.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(
+                                            text = "Copy",
+                                            color = MutedSlate,
+                                            fontSize = 8.sp
+                                        )
+                                    }
                                 }
                             }
                         }
