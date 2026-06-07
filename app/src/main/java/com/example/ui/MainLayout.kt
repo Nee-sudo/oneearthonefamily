@@ -3028,9 +3028,11 @@ fun HoverableFlag(flagEmoji: String, territory: String) {
 fun FindFriendsTab(viewModel: AppViewModel) {
     val friends by viewModel.allFriends.collectAsState()
     var searchQuery by remember { mutableStateOf("") }
+    var selectedSortOption by remember { mutableStateOf("Rank") } // options: "Rank", "Recent Activity", "Newest Members"
+    var expandedSortMenu by remember { mutableStateOf(false) }
 
-    val filteredFriends = remember(friends, searchQuery) {
-        if (searchQuery.isBlank()) {
+    val filteredAndSortedFriends = remember(friends, searchQuery, selectedSortOption) {
+        val filtered = if (searchQuery.isBlank()) {
             friends
         } else {
             friends.filter {
@@ -3039,6 +3041,31 @@ fun FindFriendsTab(viewModel: AppViewModel) {
                 it.territory.contains(searchQuery, ignoreCase = true)
             }
         }
+
+        when (selectedSortOption) {
+            "Rank" -> {
+                filtered.sortedWith(
+                    compareByDescending<UserEntity> {
+                        when (it.currentRank.lowercase()) {
+                            "royal candidate" -> 4
+                            "guardian" -> 3
+                            "noble" -> 2
+                            "contributor" -> 1
+                            else -> 0
+                        }
+                    }.thenByDescending { it.knowledgeCredits + it.contributionCredits }
+                )
+            }
+            "Recent Activity" -> {
+                // Sort by contribution credits descending as metric of active system interactions
+                filtered.sortedByDescending { it.contributionCredits }
+            }
+            "Newest Members" -> {
+                // Sort by ID descending (reverse order)
+                filtered.sortedByDescending { it.id }
+            }
+            else -> filtered
+        }
     }
 
     Column(
@@ -3046,40 +3073,113 @@ fun FindFriendsTab(viewModel: AppViewModel) {
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // High-contrast Search Filter Component replacing title/description
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            placeholder = { Text("Search citizens by name, handle, or territory...", color = MutedSlate, fontSize = 13.sp) },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = RegalGold, modifier = Modifier.size(20.dp)) },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery = "" }) {
-                        Icon(Icons.Default.Clear, contentDescription = "Clear search", tint = MutedSlate, modifier = Modifier.size(20.dp))
-                    }
-                }
-            },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = GhostWhite,
-                unfocusedTextColor = GhostWhite,
-                focusedBorderColor = RegalGold,
-                unfocusedBorderColor = RegalGold.copy(alpha = 0.3f),
-                focusedContainerColor = VelvetCard,
-                unfocusedContainerColor = VelvetCard
-            ),
-            shape = RoundedCornerShape(12.dp),
-            singleLine = true,
+        // High-contrast Search & Sorting Row
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 12.dp)
-        )
+                .padding(bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = RegalGold, modifier = Modifier.size(18.dp)) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear search", tint = MutedSlate, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = GhostWhite,
+                    unfocusedTextColor = GhostWhite,
+                    focusedBorderColor = RegalGold,
+                    unfocusedBorderColor = RegalGold.copy(alpha = 0.3f),
+                    focusedContainerColor = VelvetCard,
+                    unfocusedContainerColor = VelvetCard
+                ),
+                shape = RoundedCornerShape(12.dp),
+                singleLine = true,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(46.dp)
+            )
+
+            // Sorting Selection Dropdown menu button
+            Box {
+                Button(
+                    onClick = { expandedSortMenu = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = VelvetCard),
+                    border = BorderStroke(0.5.dp, RegalGold.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.height(46.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Sort,
+                            contentDescription = "Sort Icon",
+                            tint = RegalGold,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            text = selectedSortOption,
+                            color = GhostWhite,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "Dropdown Arrow",
+                            tint = MutedSlate,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = expandedSortMenu,
+                    onDismissRequest = { expandedSortMenu = false },
+                    modifier = Modifier
+                        .background(VelvetCard)
+                        .border(0.5.dp, RegalGold.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Rank", color = GhostWhite, fontSize = 13.sp) },
+                        onClick = {
+                            selectedSortOption = "Rank"
+                            expandedSortMenu = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Recent Activity", color = GhostWhite, fontSize = 13.sp) },
+                        onClick = {
+                            selectedSortOption = "Recent Activity"
+                            expandedSortMenu = false
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Newest Members", color = GhostWhite, fontSize = 13.sp) },
+                        onClick = {
+                            selectedSortOption = "Newest Members"
+                            expandedSortMenu = false
+                        }
+                    )
+                }
+            }
+        }
 
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
-            if (filteredFriends.isEmpty()) {
+            if (filteredAndSortedFriends.isEmpty()) {
                 item {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(24.dp),
@@ -3093,7 +3193,7 @@ fun FindFriendsTab(viewModel: AppViewModel) {
                     }
                 }
             } else {
-                items(filteredFriends) { friend ->
+                items(filteredAndSortedFriends) { friend ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
