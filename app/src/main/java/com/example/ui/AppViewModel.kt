@@ -24,7 +24,7 @@ enum class Screen {
 // Sub-screens for the Main App using Navigation Tabs
 enum class DashboardTab {
     PublicSquare,
-    KnowledgeArena,
+    FindFriends,
     Messaging,
     ProfileAndElections,
     MissionsAndLegends
@@ -47,6 +47,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _currentTab = MutableStateFlow<DashboardTab>(DashboardTab.PublicSquare)
     val currentTab: StateFlow<DashboardTab> = _currentTab.asStateFlow()
+
+    private val _missionsSubTab = MutableStateFlow(0) // 0: Missions & Legends, 1: Knowledge Arena
+    val missionsSubTab: StateFlow<Int> = _missionsSubTab.asStateFlow()
+
+    fun selectMissionsSubTab(idx: Int) {
+        _missionsSubTab.value = idx
+    }
 
     private val _showEditProfileDialog = MutableStateFlow(false)
     val showEditProfileDialog: StateFlow<Boolean> = _showEditProfileDialog.asStateFlow()
@@ -80,6 +87,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     // Full Leaderboard users Flow
     val leaderboardUsers: StateFlow<List<UserEntity>> = userDao.getLeaderboardUsersFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // All registered users except "me" for Find Friends
+    val allFriends: StateFlow<List<UserEntity>> = userDao.getAllFriendsFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Active Mission Flow
@@ -495,6 +506,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectTab(tab: DashboardTab) {
         _currentTab.value = tab
+    }
+
+    fun notifyProfileView(hostUser: UserEntity) {
+        viewModelScope.launch {
+            val me = userDao.getUserById("me")
+            if (me != null && me.id != hostUser.id) {
+                val visitor = ProfileVisitorEntity(
+                    hostUserId = hostUser.id,
+                    visitorName = me.name,
+                    visitorTerritory = me.territory,
+                    visitorFlag = me.flagEmoji,
+                    visitorRank = me.currentRank,
+                    timestamp = System.currentTimeMillis()
+                )
+                visitorDao.insertVisitor(visitor)
+                _toastMessage.emit("Notification dispatched: ${me.name} (${me.flagEmoji}) viewed ${hostUser.name}'s profile!")
+            }
+        }
     }
 
     fun showWelcomeDialog() {

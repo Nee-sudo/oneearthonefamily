@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1702,10 +1703,10 @@ fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostSt
                     )
                 )
                 NavigationBarItem(
-                    selected = currentTab == DashboardTab.KnowledgeArena,
-                    onClick = { viewModel.selectTab(DashboardTab.KnowledgeArena) },
-                    icon = { Icon(Icons.Default.School, contentDescription = null) },
-                    label = { Text("Arena", fontSize = 10.sp) },
+                    selected = currentTab == DashboardTab.FindFriends,
+                    onClick = { viewModel.selectTab(DashboardTab.FindFriends) },
+                    icon = { Icon(Icons.Default.People, contentDescription = null) },
+                    label = { Text("Find Friends", fontSize = 10.sp) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = RegalGold,
                         selectedTextColor = RegalGold,
@@ -1770,7 +1771,7 @@ fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostSt
         ) {
             when (currentTab) {
                 DashboardTab.PublicSquare -> PublicSquareTab(viewModel)
-                DashboardTab.KnowledgeArena -> KnowledgeArenaTab(viewModel)
+                DashboardTab.FindFriends -> FindFriendsTab(viewModel)
                 DashboardTab.Messaging -> MessagingTab(viewModel)
                 DashboardTab.ProfileAndElections -> ElectionsAndProfileTab(viewModel)
                 DashboardTab.MissionsAndLegends -> MissionsTab(viewModel)
@@ -2966,6 +2967,172 @@ fun ReactionButton(
 }
 
 // ============================================================================
+// FIND FRIENDS TAB (Active citizen profiles with interactive profile messaging)
+// ============================================================================
+@Composable
+fun FindFriendsTab(viewModel: AppViewModel) {
+    val friends by viewModel.allFriends.collectAsState()
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Text(
+            text = "Synchronize & Find Friends",
+            color = GhostWhite,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            text = "Discover active planetary minds, review their imperial profiles, write direct messages, and build deep civic connections.",
+            color = MutedSlate,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+        )
+
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(bottom = 80.dp)
+        ) {
+            if (friends.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("Searching for global citizens...", color = MutedSlate, fontSize = 13.sp)
+                    }
+                }
+            } else {
+                items(friends) { friend ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                viewModel.notifyProfileView(friend)
+                                viewModel.showProfileForUserByName(
+                                    friend.name,
+                                    friend.flagEmoji,
+                                    friend.currentRank,
+                                    friend.territory
+                                )
+                            },
+                        colors = CardDefaults.cardColors(containerColor = VelvetCard),
+                        border = BorderStroke(0.5.dp, RegalGold.copy(alpha = 0.3f)),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .clip(CircleShape)
+                                            .background(CharcoalObsidian)
+                                            .border(1.dp, RegalGold, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = friend.name.take(1).uppercase(),
+                                            color = RegalGold,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = friend.name,
+                                                color = GhostWhite,
+                                                fontSize = 15.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(friend.flagEmoji, fontSize = 14.sp)
+                                        }
+                                        Text(
+                                            text = friend.username,
+                                            color = MutedSlate,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
+
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = RegalGold.copy(alpha = 0.12f)),
+                                    border = BorderStroke(0.5.dp, RegalGold.copy(alpha = 0.5f)),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(
+                                        text = friend.currentRank,
+                                        color = RegalGold,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = friend.bio,
+                                color = GhostWhite.copy(alpha = 0.85f),
+                                fontSize = 12.sp,
+                                maxLines = 2,
+                                lineHeight = 16.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Column {
+                                        Text("KNOWLEDGE", color = MutedSlate, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("${friend.knowledgeCredits} KC", color = RegalGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    Column {
+                                        Text("CONTRIBUTION", color = MutedSlate, fontSize = 9.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("${friend.contributionCredits} CC", color = LustrousAmber, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
+                                Button(
+                                    onClick = {
+                                        viewModel.notifyProfileView(friend)
+                                        viewModel.startChatWithUser(friend)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = RegalGold),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.height(32.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Icon(Icons.Default.Send, contentDescription = null, tint = CharcoalObsidian, modifier = Modifier.size(12.dp))
+                                        Text("Message", color = CharcoalObsidian, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
 // TAB 2: KNOWLEDGE ARENA (Interactive System Trivia Exams)
 // ============================================================================
 @Composable
@@ -4028,7 +4195,10 @@ fun ElectionsAndProfileTab(viewModel: AppViewModel) {
 
                     // Boost Rank Action Button (One Word)
                     Button(
-                        onClick = { viewModel.selectTab(DashboardTab.KnowledgeArena) },
+                        onClick = {
+                            viewModel.selectTab(DashboardTab.MissionsAndLegends)
+                            viewModel.selectMissionsSubTab(1)
+                        },
                         colors = ButtonDefaults.buttonColors(containerColor = RegalGold),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -4854,210 +5024,240 @@ fun ElectionsAndProfileTab(viewModel: AppViewModel) {
 // ============================================================================
 @Composable
 fun MissionsTab(viewModel: AppViewModel) {
+    val subTab by viewModel.missionsSubTab.collectAsState()
     val missions by viewModel.activeMissions.collectAsState()
     val legends by viewModel.hallOfLegends.collectAsState()
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 80.dp)
-    ) {
-        // Imperial Active Missions Panel
-        item {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    "Active Imperial Missions",
-                    color = GhostWhite,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
+    Column(modifier = Modifier.fillMaxSize()) {
+        TabRow(
+            selectedTabIndex = subTab,
+            containerColor = VelvetCard,
+            contentColor = RegalGold,
+            indicator = { tabPositions ->
+                TabRowDefaults.Indicator(
+                    modifier = Modifier.tabIndicatorOffset(tabPositions[subTab]),
+                    color = RegalGold
                 )
-                Text(
-                    "Collaborative environmental and intellectual work to earn credit points.",
-                    color = MutedSlate,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
-                )
+            }
+        ) {
+            Tab(
+                selected = subTab == 0,
+                onClick = { viewModel.selectMissionsSubTab(0) },
+                text = { Text("Missions", fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+            )
+            Tab(
+                selected = subTab == 1,
+                onClick = { viewModel.selectMissionsSubTab(1) },
+                text = { Text("Knowledge Arena", fontWeight = FontWeight.Bold, fontSize = 12.sp) }
+            )
+        }
 
-                missions.forEach { mission ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        colors = CardDefaults.cardColors(containerColor = VelvetCard),
-                        border = BorderStroke(0.5.dp, MutedSlate.copy(alpha = 0.3f)),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    mission.title,
-                                    color = GhostWhite,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+        if (subTab == 0) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 80.dp)
+            ) {
+                // Imperial Active Missions Panel
+                item {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            "Active Imperial Missions",
+                            color = GhostWhite,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Collaborative environmental and intellectual work to earn credit points.",
+                            color = MutedSlate,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                        )
 
-                                Card(
-                                    colors = CardDefaults.cardColors(containerColor = RegalGold.copy(alpha = 0.15f)),
-                                    shape = RoundedCornerShape(4.dp)
-                                ) {
-                                    Text(
-                                        text = mission.targetMetric,
-                                        color = RegalGold,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-
-                            Text(
-                                text = mission.description,
-                                color = MutedSlate,
-                                fontSize = 12.sp,
-                                modifier = Modifier.padding(vertical = 8.dp)
-                            )
-
-                            // Numerical progress metrics
-                            val progressPercent = (mission.currentProgress.toFloat() / mission.targetValue.toFloat())
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    "Progress: ${mission.currentProgress} / ${mission.targetValue}",
-                                    color = GhostWhite,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    "${(progressPercent * 100).toInt()}% completed",
-                                    color = EmeraldSuccess,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-
-                            LinearProgressIndicator(
-                                progress = progressPercent,
-                                color = RegalGold,
-                                trackColor = CharcoalObsidian,
+                        missions.forEach { mission ->
+                            Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 8.dp)
-                                    .height(6.dp)
-                                    .clip(RoundedCornerShape(3.dp))
-                            )
-
-                            // Allocation button trigger
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
+                                    .padding(vertical = 8.dp),
+                                colors = CardDefaults.cardColors(containerColor = VelvetCard),
+                                border = BorderStroke(0.5.dp, MutedSlate.copy(alpha = 0.3f)),
+                                shape = RoundedCornerShape(16.dp)
                             ) {
-                                Button(
-                                    onClick = { viewModel.contributeToMission(mission.id, 10) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = RegalGold),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.height(36.dp),
-                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
-                                ) {
-                                    Text("ALLOCATE 10 CC", color = CharcoalObsidian, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            mission.title,
+                                            color = GhostWhite,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+
+                                        Card(
+                                            colors = CardDefaults.cardColors(containerColor = RegalGold.copy(alpha = 0.15f)),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = mission.targetMetric,
+                                                color = RegalGold,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Text(
+                                        text = mission.description,
+                                        color = MutedSlate,
+                                        fontSize = 12.sp,
+                                        modifier = Modifier.padding(vertical = 8.dp)
+                                    )
+
+                                    // Numerical progress metrics
+                                    val progressPercent = (mission.currentProgress.toFloat() / mission.targetValue.toFloat())
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            "Progress: ${mission.currentProgress} / ${mission.targetValue}",
+                                            color = GhostWhite,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            "${(progressPercent * 100).toInt()}% completed",
+                                            color = EmeraldSuccess,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    LinearProgressIndicator(
+                                        progress = progressPercent,
+                                        color = RegalGold,
+                                        trackColor = CharcoalObsidian,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 8.dp)
+                                            .height(6.dp)
+                                            .clip(RoundedCornerShape(3.dp))
+                                    )
+
+                                    // Allocation button trigger
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.End
+                                    ) {
+                                        Button(
+                                            onClick = { viewModel.contributeToMission(mission.id, 10) },
+                                            colors = ButtonDefaults.buttonColors(containerColor = RegalGold),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.height(36.dp),
+                                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                                        ) {
+                                            Text("ALLOCATE 10 CC", color = CharcoalObsidian, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
-        }
 
-        // HISTORICAL HALL OF LEGENDS BOARD
-        item {
-            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                Text(
-                    "Imperial Hall of Legends",
-                    color = GhostWhite,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "Permanent immutable archive of legendary monarchs, grand educators, and founders.",
-                    color = MutedSlate,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
-                )
+                // HISTORICAL HALL OF LEGENDS BOARD
+                item {
+                    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                        Text(
+                            "Imperial Hall of Legends",
+                            color = GhostWhite,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Permanent immutable archive of legendary monarchs, grand educators, and founders.",
+                            color = MutedSlate,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                        )
 
-                legends.forEach { legend ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        colors = CardDefaults.cardColors(containerColor = VelvetCard),
-                        border = BorderStroke(1.dp, RegalGold.copy(alpha = 0.5f)),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.Stars,
-                                contentDescription = null,
-                                tint = RegalGold,
-                                modifier = Modifier.size(36.dp)
-                            )
-
-                            Spacer(modifier = Modifier.width(16.dp))
-
-                            Column {
+                        legends.forEach { legend ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 8.dp),
+                                colors = CardDefaults.cardColors(containerColor = VelvetCard),
+                                border = BorderStroke(1.dp, RegalGold.copy(alpha = 0.5f)),
+                                shape = RoundedCornerShape(16.dp)
+                            ) {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.padding(16.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        legend.name,
-                                        color = GhostWhite,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold
+                                    Icon(
+                                        Icons.Default.Stars,
+                                        contentDescription = null,
+                                        tint = RegalGold,
+                                        modifier = Modifier.size(36.dp)
                                     )
 
-                                    Card(
-                                        colors = CardDefaults.cardColors(containerColor = ElectricBlue.copy(alpha = 0.15f)),
-                                        shape = RoundedCornerShape(4.dp)
-                                    ) {
+                                    Spacer(modifier = Modifier.width(16.dp))
+
+                                    Column {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                legend.name,
+                                                color = GhostWhite,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+
+                                            Card(
+                                                colors = CardDefaults.cardColors(containerColor = ElectricBlue.copy(alpha = 0.15f)),
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = legend.achievement,
+                                                    color = ElectricBlue,
+                                                    fontSize = 8.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+
                                         Text(
-                                            text = legend.achievement,
-                                            color = ElectricBlue,
-                                            fontSize = 8.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            text = legend.role,
+                                            color = RegalGold,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.padding(top = 2.dp)
+                                        )
+
+                                        Text(
+                                            text = legend.details,
+                                            color = MutedSlate,
+                                            fontSize = 11.sp,
+                                            lineHeight = 15.sp,
+                                            modifier = Modifier.padding(top = 4.dp)
                                         )
                                     }
                                 }
-
-                                Text(
-                                    text = legend.role,
-                                    color = RegalGold,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier.padding(top = 2.dp)
-                                )
-
-                                Text(
-                                    text = legend.details,
-                                    color = MutedSlate,
-                                    fontSize = 11.sp,
-                                    lineHeight = 15.sp,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
                             }
                         }
                     }
                 }
             }
+        } else {
+            KnowledgeArenaTab(viewModel)
         }
     }
 }
