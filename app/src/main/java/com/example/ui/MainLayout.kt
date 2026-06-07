@@ -482,6 +482,7 @@ fun RegistrationView(viewModel: AppViewModel) {
         modifier = Modifier
             .fillMaxSize()
             .navigationBarsPadding()
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -785,10 +786,16 @@ fun RegistrationView(viewModel: AppViewModel) {
 
         // Identity Verification Dialog Modal
         if (showOtpDialog) {
-            Dialog(onDismissRequest = { showOtpDialog = false }) {
+            Dialog(
+                onDismissRequest = { showOtpDialog = false },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+            ) {
                 Card(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .widthIn(max = 450.dp)
+                        .fillMaxWidth(0.9f)
+                        .wrapContentHeight()
+                        .imePadding()
                         .padding(16.dp),
                     colors = CardDefaults.cardColors(containerColor = VelvetCard),
                     border = BorderStroke(1.dp, RegalGold),
@@ -899,6 +906,7 @@ fun LoginView(viewModel: AppViewModel) {
         modifier = Modifier
             .fillMaxSize()
             .navigationBarsPadding()
+            .imePadding()
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -1433,7 +1441,7 @@ fun CitizenOathView(viewModel: AppViewModel) {
 // ============================================================================
 // 7. MAIN DASHBOARD VIEW (With Top bar stats, 5 tabs, dialogs)
 // ============================================================================
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostState) {
     val currentTab by viewModel.currentTab.collectAsState()
@@ -1451,6 +1459,7 @@ fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostSt
 
     Scaffold(
         containerColor = DeepOceanSapphire,
+        contentWindowInsets = ScaffoldDefaults.contentWindowInsets.exclude(WindowInsets.ime),
         topBar = {
             TopAppBar(
                 title = {
@@ -1738,7 +1747,18 @@ fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostSt
             }
         }
     ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+        val isKeyboardOpen = androidx.compose.foundation.layout.WindowInsets.isImeVisible
+        val bottomPadding = if (isKeyboardOpen) 0.dp else innerPadding.calculateBottomPadding()
+        Box(
+            modifier = Modifier
+                .padding(
+                    start = innerPadding.calculateStartPadding(androidx.compose.ui.platform.LocalLayoutDirection.current),
+                    top = innerPadding.calculateTopPadding(),
+                    end = innerPadding.calculateEndPadding(androidx.compose.ui.platform.LocalLayoutDirection.current),
+                    bottom = bottomPadding
+                )
+                .fillMaxSize()
+        ) {
             when (currentTab) {
                 DashboardTab.PublicSquare -> PublicSquareTab(viewModel)
                 DashboardTab.KnowledgeArena -> KnowledgeArenaTab(viewModel)
@@ -1799,15 +1819,25 @@ fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostSt
     // Modal: The Sync Settings
     if (showSyncSettingsDialog) {
         var urlInput by remember { mutableStateOf(backendBaseUrl) }
-        Dialog(onDismissRequest = { showSyncSettingsDialog = false }) {
+        Dialog(
+            onDismissRequest = { showSyncSettingsDialog = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = VelvetCard),
                 border = BorderStroke(1.5.dp, RegalGold),
                 shape = RoundedCornerShape(24.dp),
-                modifier = Modifier.padding(16.dp)
+                modifier = Modifier
+                    .widthIn(max = 450.dp)
+                    .fillMaxWidth(0.9f)
+                    .wrapContentHeight()
+                    .imePadding()
+                    .padding(16.dp)
             ) {
                 Column(
-                    modifier = Modifier.padding(24.dp)
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .verticalScroll(rememberScrollState())
                 ) {
                     Text(
                         text = "Cosmos Network Sync",
@@ -1974,13 +2004,19 @@ fun ProfileDisplayDialog(user: UserEntity, viewModel: AppViewModel, onClose: () 
     var editTerritory by remember { mutableStateOf(user.territory) }
     var editFlagEmoji by remember { mutableStateOf(user.flagEmoji) }
 
-    Dialog(onDismissRequest = onClose) {
+    Dialog(
+        onDismissRequest = onClose,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
         Card(
             colors = CardDefaults.cardColors(containerColor = VelvetCard),
             border = BorderStroke(1.5.dp, RegalGold),
             shape = RoundedCornerShape(24.dp),
             modifier = Modifier
-                .fillMaxWidth()
+                .widthIn(max = 450.dp)
+                .fillMaxWidth(0.9f)
+                .wrapContentHeight()
+                .imePadding()
                 .padding(16.dp)
         ) {
             Column(
@@ -2393,7 +2429,7 @@ fun PublicSquareTab(viewModel: AppViewModel) {
     val commentsList by viewModel.currentPostComments.collectAsState()
     var commentText by remember { mutableStateOf("") }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().imePadding()) {
         // Merit ranked Scroll feed
         LazyColumn(
             modifier = Modifier.weight(1f),
@@ -2636,14 +2672,19 @@ fun PublicSquareTab(viewModel: AppViewModel) {
 
     // Modal comments sliding tray
     if (commentsPostId != null) {
-        Dialog(onDismissRequest = { viewModel.selectPostForComments(null) }) {
+        Dialog(
+            onDismissRequest = { viewModel.selectPostForComments(null) },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = VelvetCard),
                 border = BorderStroke(1.dp, RegalGold),
                 shape = RoundedCornerShape(24.dp),
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(500.dp)
+                    .widthIn(max = 450.dp)
+                    .fillMaxWidth(0.9f)
+                    .heightIn(max = 500.dp)
+                    .imePadding()
                     .padding(16.dp)
             ) {
                 Column(modifier = Modifier.padding(20.dp)) {
@@ -3249,7 +3290,7 @@ fun MessagingTab(viewModel: AppViewModel) {
     } else {
         // Individual Chat messaging room interface view
         val activeRoom = (activeRooms + waitingRooms).find { it.id == selectedId }
-        Column(modifier = Modifier.fillMaxSize().imePadding()) {
+        Column(modifier = Modifier.fillMaxSize()) {
             // Room Header strip - allows clicking profile details of chat partner
             Row(
                 modifier = Modifier
@@ -3425,6 +3466,7 @@ fun MessagingTab(viewModel: AppViewModel) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(VelvetCard)
+                    .imePadding()
                     .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -3512,7 +3554,7 @@ fun ElectionsAndProfileTab(viewModel: AppViewModel) {
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().imePadding(),
         contentPadding = PaddingValues(bottom = 80.dp)
     ) {
         // Real-Time Profile Ledger Section
@@ -4393,14 +4435,26 @@ fun ElectionsAndProfileTab(viewModel: AppViewModel) {
 
     // Modal: Register candidacy compiler
     if (showCampaignModalByMe) {
-        Dialog(onDismissRequest = { showCampaignModalByMe = false }) {
+        Dialog(
+            onDismissRequest = { showCampaignModalByMe = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = VelvetCard),
                 border = BorderStroke(1.dp, RegalGold),
                 shape = RoundedCornerShape(24.dp),
-                modifier = Modifier.padding(16.dp)
+                modifier = Modifier
+                    .widthIn(max = 450.dp)
+                    .fillMaxWidth(0.9f)
+                    .wrapContentHeight()
+                    .imePadding()
+                    .padding(16.dp)
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(
+                    modifier = Modifier
+                        .padding(20.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
                     Text(
                         "Dossier: Royal Sovereign Crown Setup",
                         color = GhostWhite,
@@ -4463,14 +4517,26 @@ fun ElectionsAndProfileTab(viewModel: AppViewModel) {
     }
 
     if (showEditProfileModal) {
-        Dialog(onDismissRequest = { viewModel.setShowEditProfileDialog(false) }) {
+        Dialog(
+            onDismissRequest = { viewModel.setShowEditProfileDialog(false) },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = VelvetCard),
                 border = BorderStroke(1.dp, RegalGold),
                 shape = RoundedCornerShape(24.dp),
-                modifier = Modifier.padding(16.dp)
+                modifier = Modifier
+                    .widthIn(max = 450.dp)
+                    .fillMaxWidth(0.9f)
+                    .wrapContentHeight()
+                    .imePadding()
+                    .padding(16.dp)
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(
+                    modifier = Modifier
+                        .padding(20.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
                     Text(
                         "Synchronize Imperial Profile",
                         color = GhostWhite,
@@ -4592,14 +4658,26 @@ fun ElectionsAndProfileTab(viewModel: AppViewModel) {
     }
 
     if (editingPostState != null) {
-        Dialog(onDismissRequest = { editingPostState = null }) {
+        Dialog(
+            onDismissRequest = { editingPostState = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
             Card(
                 colors = CardDefaults.cardColors(containerColor = VelvetCard),
                 border = BorderStroke(1.dp, RegalGold),
                 shape = RoundedCornerShape(24.dp),
-                modifier = Modifier.padding(16.dp)
+                modifier = Modifier
+                    .widthIn(max = 450.dp)
+                    .fillMaxWidth(0.9f)
+                    .wrapContentHeight()
+                    .imePadding()
+                    .padding(16.dp)
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
+                Column(
+                    modifier = Modifier
+                        .padding(20.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
                     Text(
                         text = "Edit Public Square Entry",
                         color = GhostWhite,
