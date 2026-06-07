@@ -1,6 +1,7 @@
 import { Server, Socket } from 'socket.io';
-import { ChatMessage } from '../models/ChatMessage';
-import { ChatRoom } from '../models/ChatRoom';
+import { getFirestoreDb } from '../config/database';
+import { IChatMessage } from '../models/ChatMessage';
+import { IChatRoom } from '../models/ChatRoom';
 import { getNextSequenceValue } from '../models/Counter';
 
 export const setupSocketHandler = (io: Server) => {
@@ -23,28 +24,40 @@ export const setupSocketHandler = (io: Server) => {
     }) => {
       try {
         const { roomId, senderId, senderName, messageText } = data;
+        const db = getFirestoreDb();
         
-        // Save to Database
+        // Save to Firestore
         const nextId = await getNextSequenceValue('message_id');
-        const newMessage = new ChatMessage({
+        const newMessage: IChatMessage = {
           id: nextId,
-          roomId,
+          roomId: Number(roomId),
           senderId,
           senderName,
           messageText,
           timestamp: Date.now()
-        });
+        };
         
-        await newMessage.save();
+        await db.collection('chatMessages').doc(String(nextId)).set(newMessage);
 
         // Update ChatRoom
-        await ChatRoom.findOneAndUpdate(
-          { id: roomId },
-          {
-            lastMessage: messageText,
-            lastMessageTime: Date.now()
+        const roomRef = db.collection('chatRooms').doc(String(roomId));
+        const roomSnapshot = await roomRef.get();
+        if (roomSnapshot.exists) {
+          const room = roomSnapshot.data() as IChatRoom;
+          room.lastMessage = messageText;
+          room.lastMessageTime = Date.now();
+          await roomRef.set(room);
+        } else {
+          // Fallback locate and save
+          const query = await db.collection('chatRooms').where('id', '==', Number(roomId)).get();
+          if (!query.empty) {
+            const doc = query.docs[0];
+            const room = doc.data() as IChatRoom;
+            room.lastMessage = messageText;
+            room.lastMessageTime = Date.now();
+            await doc.ref.set(room);
           }
-        );
+        }
 
         // Broadcast to dynamic channel
         const roomChannel = `room_${roomId}`;

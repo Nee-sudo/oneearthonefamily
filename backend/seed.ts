@@ -1,18 +1,19 @@
-import { User } from './models/User';
-import { Post } from './models/Post';
-import { Comment } from './models/Comment';
-import { ChatRoom } from './models/ChatRoom';
-import { Counter } from './models/Counter';
+import { getFirestoreDb } from './config/database';
+import { IUser } from './models/User';
+import { IPost } from './models/Post';
+import { IComment } from './models/Comment';
 
 export const seedDatabaseIfEmpty = async () => {
   try {
+    const db = getFirestoreDb();
+
     // 1. Seed Users
-    const userCount = await User.countDocuments();
-    if (userCount === 0) {
-      console.log('🌱 Seeding administrative citizens...');
-      const defaultUsers = [
+    const usersSnapshot = await db.collection('users').limit(1).get();
+    if (usersSnapshot.empty) {
+      console.log('🌱 Firestore: Seeding administrative citizens...');
+      const defaultUsers: IUser[] = [
         {
-          _id: "arjun@oneearth.io",
+          id: "arjun@oneearth.io",
           name: "Arjun Patel",
           username: "@arjun_vision",
           email: "arjun@oneearth.io",
@@ -30,11 +31,18 @@ export const seedDatabaseIfEmpty = async () => {
           campaignVision: "United Global Ecological Safeguards",
           campaignManifesto: "My campaign centers around tying modern technology directly with micro-farming community actions. Let's make every territory garden green.",
           votesCount: 12,
+          hasVoted: false,
           onboardingCompleted: true,
-          citizenOathAccepted: true
+          citizenOathAccepted: true,
+          followers: 120,
+          following: 95,
+          profilePhoto: "",
+          passphrase: "1234",
+          createdAt: Date.now(),
+          updatedAt: Date.now()
         },
         {
-          _id: "clara@oneearth.io",
+          id: "clara@oneearth.io",
           name: "Clara Dupont",
           username: "@clara_sage",
           email: "clara@oneearth.io",
@@ -52,11 +60,18 @@ export const seedDatabaseIfEmpty = async () => {
           campaignVision: "Absolute Scientific Open Access",
           campaignManifesto: "Education is the foundation of meritocratic leadership. I intend to build the Open Digital Library with zero economic payload.",
           votesCount: 15,
+          hasVoted: false,
           onboardingCompleted: true,
-          citizenOathAccepted: true
+          citizenOathAccepted: true,
+          followers: 140,
+          following: 110,
+          profilePhoto: "",
+          passphrase: "1234",
+          createdAt: Date.now(),
+          updatedAt: Date.now()
         },
         {
-          _id: "kofi@oneearth.io",
+          id: "kofi@oneearth.io",
           name: "Kofi Mensah",
           username: "@kofi_builder",
           email: "kofi@oneearth.io",
@@ -74,37 +89,43 @@ export const seedDatabaseIfEmpty = async () => {
           campaignVision: "Grassroots Infrastructure Mobilization",
           campaignManifesto: "Action outweighs debate. I will introduce regional solar and clean water blueprints as active Imperial missions for collective credit.",
           votesCount: 8,
+          hasVoted: false,
           onboardingCompleted: true,
-          citizenOathAccepted: true
+          citizenOathAccepted: true,
+          followers: 85,
+          following: 75,
+          profilePhoto: "",
+          passphrase: "1234",
+          createdAt: Date.now(),
+          updatedAt: Date.now()
         }
       ];
 
       for (const u of defaultUsers) {
-        await User.create(u);
+        await db.collection('users').doc(u.id).set(u);
       }
-      console.log('✅ Users seeded successfully.');
+      console.log('✅ Firestore: Administrative citizens successfully seeded.');
     }
 
-    // 2. Initialize sequence counters so incremental primary keys match 
-    const counterCount = await Counter.countDocuments();
-    if (counterCount === 0) {
-      await Counter.insertMany([
-        { id: 'post_id', seq: 3 },
-        { id: 'comment_id', seq: 3 },
-        { id: 'room_id', seq: 0 },
-        { id: 'message_id', seq: 0 }
-      ]);
-      console.log('🌱 Sequence Counters initialized.');
+    // 2. Initialize Sequence Counters
+    const countersSnapshot = await db.collection('counters').limit(1).get();
+    if (countersSnapshot.empty) {
+      console.log('🌱 Firestore: Seeding incremental sequence counters...');
+      await db.collection('counters').doc('post_id').set({ seq: 3 });
+      await db.collection('counters').doc('comment_id').set({ seq: 3 });
+      await db.collection('counters').doc('room_id').set({ seq: 0 });
+      await db.collection('counters').doc('message_id').set({ seq: 0 });
+      console.log('✅ Firestore: Sequence tables successfully synchronized.');
     }
 
     // 3. Seed Posts
-    const postCount = await Post.countDocuments();
-    if (postCount === 0) {
-      console.log('🌱 Seeding default global feed posts...');
-      const defaultPosts = [
+    const postsSnapshot = await db.collection('posts').limit(1).get();
+    if (postsSnapshot.empty) {
+      console.log('🌱 Firestore: Seeding default administrative feeds...');
+      const defaultPosts: IPost[] = [
         {
           id: 1,
-          authorId: "gandhi_avatar",
+          authorId: "arjun@oneearth.io",
           authorName: "Arjun Patel",
           authorUsername: "@arjun_vision",
           authorRank: "Royal Candidate",
@@ -115,11 +136,14 @@ export const seedDatabaseIfEmpty = async () => {
           timestamp: Date.now() - 3600000 * 24, // 1 day ago
           knowledgeValue: 18,
           contributionProof: 24,
-          reputationImpact: 99
+          reputationImpact: 99,
+          reactedWiseUsers: "",
+          reactedHelpfulUsers: "",
+          reactedInspiringUsers: ""
         },
         {
           id: 2,
-          authorId: "clara_nobel",
+          authorId: "clara@oneearth.io",
           authorName: "Clara Dupont",
           authorUsername: "@clara_sage",
           authorRank: "Guardian",
@@ -130,11 +154,14 @@ export const seedDatabaseIfEmpty = async () => {
           timestamp: Date.now() - 3600000 * 12, // 12 hours ago
           knowledgeValue: 35,
           contributionProof: 12,
-          reputationImpact: 98
+          reputationImpact: 98,
+          reactedWiseUsers: "",
+          reactedHelpfulUsers: "",
+          reactedInspiringUsers: ""
         },
         {
           id: 3,
-          authorId: "kenya_leader",
+          authorId: "kofi@oneearth.io",
           authorName: "Kofi Mensah",
           authorUsername: "@kofi_builder",
           authorRank: "Contributor",
@@ -145,21 +172,24 @@ export const seedDatabaseIfEmpty = async () => {
           timestamp: Date.now() - 3600000 * 4, // 4 hours ago
           knowledgeValue: 15,
           contributionProof: 32,
-          reputationImpact: 97
+          reputationImpact: 97,
+          reactedWiseUsers: "",
+          reactedHelpfulUsers: "",
+          reactedInspiringUsers: ""
         }
       ];
 
       for (const p of defaultPosts) {
-        await Post.create(p);
+        await db.collection('posts').doc(String(p.id)).set(p);
       }
-      console.log('✅ Posts seeded successfully.');
+      console.log('✅ Firestore: Feeds successfully customized.');
     }
 
     // 4. Seed Comments
-    const commentCount = await Comment.countDocuments();
-    if (commentCount === 0) {
-      console.log('🌱 Seeding comments...');
-      const defaultComments = [
+    const commentsSnapshot = await db.collection('comments').limit(1).get();
+    if (commentsSnapshot.empty) {
+      console.log('🌱 Firestore: Seeding default comments context...');
+      const defaultComments: IComment[] = [
         {
           id: 1,
           postId: 1,
@@ -183,19 +213,19 @@ export const seedDatabaseIfEmpty = async () => {
           postId: 2,
           authorName: "Arjun Patel",
           authorFlag: "🇮🇳",
-          authorRank: "Noble",
+          authorRank: "Royal Candidate",
           content: "Indeed Clara. Depth of connection directly protects systemic human sanity.",
           timestamp: Date.now() - 10000000
         }
       ];
 
       for (const c of defaultComments) {
-        await Comment.create(c);
+        await db.collection('comments').doc(String(c.id)).set(c);
       }
-      console.log('✅ Comments seeded successfully.');
+      console.log('✅ Firestore: Comments tables connected successfully.');
     }
 
   } catch (error) {
-    console.error('⚠️ Seeding check failed:', error);
+    console.error('⚠️ Firestore Seeding check failed:', error);
   }
 };

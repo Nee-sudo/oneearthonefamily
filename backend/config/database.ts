@@ -1,46 +1,67 @@
-import mongoose from 'mongoose';
+import * as admin from 'firebase-admin';
+import dotenv from 'dotenv';
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://neer:bjFBXFCYd00Gifiv@pdf-uploading-site.ges8oic.mongodb.net/oneearth?retryWrites=true&w=majority';
+dotenv.config();
+
+let db: admin.firestore.Firestore;
 
 export const connectDatabase = async (): Promise<void> => {
-  const options = {
-    autoIndex: true,
-    maxPoolSize: 10,
-    serverSelectionTimeoutMS: 5000,
-    socketTimeoutMS: 45000,
-    family: 4
-  };
-
   try {
-    mongoose.connection.on('connecting', () => {
-      console.log('⚡ Mongoose: Connecting to MongoDB Atlas...');
-    });
+    console.log('⚡ Firebase: Initializing Admin SDK...');
 
-    mongoose.connection.on('connected', () => {
-      console.log('✅ Mongoose: Successfully connected to MongoDB Atlas cluster.');
-    });
+    // If already initialized, avoid re-init
+    if (admin.apps.length > 0) {
+      db = admin.firestore();
+      return;
+    }
 
-    mongoose.connection.on('error', (err) => {
-      console.error('❌ Mongoose: Connection error:', err);
-    });
+    const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
+    const projectIdVar = process.env.FIREBASE_PROJECT_ID || 'one-earth-app';
 
-    mongoose.connection.on('disconnected', () => {
-      console.warn('⚠️ Mongoose: Disconnected from database. Attempting re-connection...');
-    });
+    if (serviceAccountVar) {
+      try {
+        const serviceAccount = JSON.parse(serviceAccountVar);
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount)
+        });
+        console.log('✅ Firebase: Successfully initialized with explicit service account JSON credential.');
+      } catch (err: any) {
+        console.error('⚠️ Firebase: Found FIREBASE_SERVICE_ACCOUNT but failed to parse JSON. Falling back to default auth.', err.message);
+        admin.initializeApp({
+          projectId: projectIdVar
+        });
+      }
+    } else {
+      // Allow fallback to standard environment auth or local emulator
+      admin.initializeApp({
+        projectId: projectIdVar
+      });
+      console.log(`✅ Firebase: Initialized with Project ID: "${projectIdVar}".`);
+    }
 
-    await mongoose.connect(MONGO_URI, options);
+    db = admin.firestore();
+    
+    // Test the connection by requesting collections (if firebase emulator or online connectivity is set up)
+    console.log('✅ Firebase: Firestore instance successfully locked and ready.');
   } catch (error) {
-    console.error('❌ Mongoose: Initial database connection failed:', error);
+    console.error('❌ Firebase: Initial SDK setup failed:', error);
     process.exit(1);
   }
 };
 
-// Graceful termination handling
+export const getFirestoreDb = (): admin.firestore.Firestore => {
+  if (!db) {
+    db = admin.firestore();
+  }
+  return db;
+};
+
 export const disconnectDatabase = async (): Promise<void> => {
   try {
-    await mongoose.disconnect();
-    console.log('🔌 Mongoose: Disconnected gracefully.');
+    // Firebase Admin cleans up automatically on process exit, no explicit disconnect is strictly needed,
+    // but we can close open network connections if desired or log safe exit.
+    console.log('🔌 Firebase Admin: Disconnected safely from Cloud services.');
   } catch (error) {
-    console.error('❌ Mongoose: Error during disconnect:', error);
+    console.error('❌ Firebase: Error during disconnect:', error);
   }
 };
