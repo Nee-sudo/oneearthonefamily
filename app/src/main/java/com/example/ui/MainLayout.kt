@@ -54,6 +54,7 @@ fun MainLayout(viewModel: AppViewModel) {
     // Collect Toast/Notification events from ViewModel
     LaunchedEffect(key1 = true) {
         viewModel.toastMessage.collectLatest { msg ->
+            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
             snackbarHostState.showSnackbar(
                 message = msg,
                 duration = SnackbarDuration.Short
@@ -87,6 +88,7 @@ fun MainLayout(viewModel: AppViewModel) {
             hostState = snackbarHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                .imePadding()
                 .padding(bottom = 80.dp),
             snackbar = { snap ->
                 Card(
@@ -1973,7 +1975,7 @@ fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostSt
                         Button(
                             onClick = {
                                 viewModel.dismissExitDialog()
-                                viewModel.navigateTo(Screen.Splash)
+                                viewModel.performLogout()
                             },
                             colors = ButtonColors(
                                 containerColor = CrimsonRep,

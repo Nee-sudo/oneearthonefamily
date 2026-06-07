@@ -118,10 +118,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val showExitSummary: StateFlow<Boolean> = _showExitSummary.asStateFlow()
 
     // Theme toggle state
-    private val _themeMode = MutableStateFlow(AppThemeMode.DARK)
+    private val _themeMode = MutableStateFlow(AppThemeMode.LIGHT)
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
 
-    private val _isDarkTheme = MutableStateFlow(true)
+    private val _isDarkTheme = MutableStateFlow(false)
     val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()
 
     fun toggleTheme() {
@@ -175,6 +175,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         prepopulateDb()
         // Start backend connection monitoring
         startBackendHealthChecking()
+        // Check if user is already logged in
+        checkAutoLogin()
+    }
+
+    private fun checkAutoLogin() {
+        viewModelScope.launch {
+            val loggedInUser = userDao.getUserById("me")
+            if (loggedInUser != null) {
+                _currentScreen.value = Screen.MainDashboard
+            }
+        }
+    }
+
+    fun performLogout() {
+        viewModelScope.launch {
+            userDao.deleteUserById("me")
+            _currentScreen.value = Screen.Splash
+        }
     }
 
     private fun checkConnectionOnce() {

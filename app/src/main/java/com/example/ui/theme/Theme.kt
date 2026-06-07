@@ -81,7 +81,7 @@ private val LightBlueWhiteScheme = androidx.compose.material3.lightColorScheme(
 
 @Composable
 fun MyApplicationTheme(
-    themeMode: AppThemeMode = AppThemeMode.DARK,
+    themeMode: AppThemeMode = AppThemeMode.LIGHT,
     content: @Composable () -> Unit,
 ) {
     ThemeState.mode = themeMode

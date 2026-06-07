@@ -3,7 +3,7 @@ package com.example.ui.theme
 import androidx.compose.ui.graphics.Color
 
 object ThemeState {
-    var mode: AppThemeMode = AppThemeMode.DARK
+    var mode: AppThemeMode = AppThemeMode.LIGHT
     val isLight: Boolean
         get() = mode == AppThemeMode.MINIMALIST_SLATE_LIGHT || mode == AppThemeMode.LIGHT
     val isBlueLight: Boolean
