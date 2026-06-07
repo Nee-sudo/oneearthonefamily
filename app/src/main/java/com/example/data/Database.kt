@@ -135,16 +135,19 @@ interface UserDao {
     @Query("SELECT * FROM users WHERE id = :id LIMIT 1")
     suspend fun getUserById(id: String): UserEntity?
 
+    @Query("SELECT * FROM users WHERE LOWER(email) = LOWER(:identifier) OR LOWER(username) = LOWER(:identifier) OR LOWER(username) = '@' || LOWER(:identifier) LIMIT 1")
+    suspend fun getUserByEmailOrUsername(identifier: String): UserEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUser(user: UserEntity)
 
     @Query("DELETE FROM users WHERE id = :id")
     suspend fun deleteUserById(id: String)
 
-    @Query("SELECT * FROM users WHERE isCandidate = 1 ORDER BY votesCount DESC, knowledgeCredits DESC")
+    @Query("SELECT * FROM users WHERE isCandidate = 1 AND id != 'me' AND id NOT LIKE 'user_%' ORDER BY votesCount DESC, knowledgeCredits DESC")
     fun getCandidatesFlow(): Flow<List<UserEntity>>
 
-    @Query("SELECT * FROM users ORDER BY (knowledgeCredits + contributionCredits) DESC")
+    @Query("SELECT * FROM users WHERE id != 'me' AND id NOT LIKE 'user_%' ORDER BY (knowledgeCredits + contributionCredits) DESC")
     fun getLeaderboardUsersFlow(): Flow<List<UserEntity>>
 }
 
@@ -170,6 +173,9 @@ interface PostDao {
 interface CommentDao {
     @Query("SELECT * FROM comments WHERE postId = :postId ORDER BY timestamp ASC")
     fun getCommentsForPostFlow(postId: Int): Flow<List<CommentEntity>>
+
+    @Query("SELECT * FROM comments")
+    fun getAllCommentsFlow(): Flow<List<CommentEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertComment(comment: CommentEntity)

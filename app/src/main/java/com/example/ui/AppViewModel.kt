@@ -170,6 +170,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val postCommentCounts: StateFlow<Map<Int, Int>> = commentDao.getAllCommentsFlow()
+        .map { comments ->
+            comments.groupBy { it.postId }.mapValues { it.value.size }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     init {
         // Prepopulate database with rich data for demonstration
         prepopulateDb()
@@ -429,7 +435,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     val clonedMe = remoteUser.copy(id = "me")
                     saveUserAndRecalculateRank(clonedMe)
                     userDao.insertUser(remoteUser.copy(id = remoteUser.email.lowercase()))
-                    userDao.insertUser(remoteUser.copy(id = "user_${remoteUser.username.lowercase().removePrefix("@")}"))
                     _toastMessage.emit("Welcome Back (Sync Active), ${remoteUser.name}!")
                     _currentScreen.value = Screen.MainDashboard
                     onResult(true)
@@ -455,14 +460,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 lowercaseId == "clara" || lowercaseId.contains("clara") -> userDao.getUserById("clara_nobel")
                 lowercaseId == "kofi" || lowercaseId.contains("kofi") -> userDao.getUserById("kenya_leader")
                 else -> {
-                    // Try exact email lookup
-                    var u = userDao.getUserById(lowercaseId)
-                    if (u == null) {
-                        // Try exact username lookup (stripping @)
-                        val handle = lowercaseId.removePrefix("@")
-                        u = userDao.getUserById("user_$handle")
-                    }
-                    u
+                    userDao.getUserByEmailOrUsername(lowercaseId)
                 }
             }
 
@@ -1039,6 +1037,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // Database pre-population logic
     private fun prepopulateDb() {
         viewModelScope.launch {
+            // Clean up legacy dummy IDs from previous compilations
+            userDao.deleteUserById("user_test_citizen")
+
             val existingMe = userDao.getUserById("me")
             if (existingMe != null) return@launch // Already pre-populated
 
@@ -1106,33 +1107,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 ),
                 UserEntity(
                     id = "test@oneearth.io",
-                    name = "Test Citizen",
-                    username = "@test_citizen",
-                    email = "test@oneearth.io",
-                    dob = "1999-01-01",
-                    territory = "United States",
-                    flagEmoji = "🇺🇸",
-                    gender = "Male",
-                    currentRank = "Explorer",
-                    knowledgeCredits = 120,
-                    contributionCredits = 60,
-                    reputationScore = 98,
-                    personalityTraits = "Explorer,Builder,Creator",
-                    bio = "Dedicated pioneer testing our One Earth connection hub.",
-                    isCandidate = false,
-                    campaignVision = "",
-                    campaignManifesto = "",
-                    votesCount = 0,
-                    hasVoted = false,
-                    onboardingCompleted = true,
-                    citizenOathAccepted = true,
-                    followers = 10,
-                    following = 15,
-                    profilePhoto = "",
-                    passphrase = "password123"
-                ),
-                UserEntity(
-                    id = "user_test_citizen",
                     name = "Test Citizen",
                     username = "@test_citizen",
                     email = "test@oneearth.io",

@@ -39,6 +39,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.unit.IntOffset
+import kotlinx.coroutines.delay
 import com.example.data.*
 import com.example.ui.theme.*
 import kotlinx.coroutines.flow.collectLatest
@@ -2426,163 +2433,186 @@ fun PublicSquareTab(viewModel: AppViewModel) {
     val posts by viewModel.rankedPosts.collectAsState()
     var postContent by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("Inquiry") }
+    var showComposerDialog by remember { mutableStateOf(false) }
 
     val commentsPostId by viewModel.selectedCommentsPostId.collectAsState()
     val commentsList by viewModel.currentPostComments.collectAsState()
+    val commentCounts by viewModel.postCommentCounts.collectAsState()
     var commentText by remember { mutableStateOf("") }
 
-    Column(modifier = Modifier.fillMaxSize().imePadding()) {
-        // Merit ranked Scroll feed
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(posts) { post ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                    colors = CardDefaults.cardColors(containerColor = VelvetCard),
-                    border = BorderStroke(0.5.dp, MutedSlate.copy(alpha = 0.3f)),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        // Post author identity block
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize().imePadding()) {
+            // Merit ranked Scroll feed
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(bottom = 80.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(posts) { post ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        colors = CardDefaults.cardColors(containerColor = VelvetCard),
+                        border = BorderStroke(0.5.dp, MutedSlate.copy(alpha = 0.3f)),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            // Post author identity block
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.clickable {
-                                    viewModel.showProfileForUserByName(post.authorName, post.authorFlag, post.authorRank, post.authorTerritory)
-                                }
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Box(
-                                    modifier = Modifier.size(46.dp),
-                                    contentAlignment = Alignment.Center
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.clickable {
+                                        viewModel.showProfileForUserByName(post.authorName, post.authorFlag, post.authorRank, post.authorTerritory)
+                                    }
                                 ) {
                                     Box(
-                                        modifier = Modifier
-                                            .size(38.dp)
-                                            .clip(CircleShape)
-                                            .background(CharcoalObsidian)
-                                            .border(1.dp, RegalGold, CircleShape),
+                                        modifier = Modifier.size(46.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(38.dp)
+                                                .clip(CircleShape)
+                                                .background(CharcoalObsidian)
+                                                .border(1.dp, RegalGold, CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = post.authorName.take(1).uppercase(),
+                                                color = RegalGold,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .align(Alignment.BottomEnd)
+                                                .offset(x = 2.dp, y = 2.dp)
+                                                .background(CharcoalObsidian, CircleShape)
+                                                .border(0.5.dp, RegalGold.copy(alpha = 0.5f), CircleShape)
+                                                .padding(horizontal = 3.dp, vertical = 1.dp)
+                                        ) {
+                                            Text(post.authorFlag, fontSize = 10.sp)
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
                                         Text(
-                                            text = post.authorName.take(1).uppercase(),
-                                            color = RegalGold,
+                                            text = "${post.authorName} (${post.authorUsername})",
+                                            color = GhostWhite,
                                             fontSize = 14.sp,
                                             fontWeight = FontWeight.Bold
                                         )
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .align(Alignment.BottomEnd)
-                                            .offset(x = 2.dp, y = 2.dp)
-                                            .background(CharcoalObsidian, CircleShape)
-                                            .border(0.5.dp, RegalGold.copy(alpha = 0.5f), CircleShape)
-                                            .padding(horizontal = 3.dp, vertical = 1.dp)
-                                    ) {
-                                        Text(post.authorFlag, fontSize = 10.sp)
+                                        Row {
+                                            Text(
+                                                text = post.authorRank,
+                                                color = RegalGold,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "Reputation: ${post.reputationImpact}%",
+                                                color = EmeraldSuccess,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
                                     }
                                 }
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
+
+                                // Category badge tag
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = RegalGold.copy(alpha = 0.1f)),
+                                    border = BorderStroke(0.5.dp, RegalGold),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
                                     Text(
-                                        text = "${post.authorName} (${post.authorUsername})",
-                                        color = GhostWhite,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold
+                                        text = post.category,
+                                        color = RegalGold,
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                                     )
-                                    Row {
-                                        Text(
-                                            text = post.authorRank,
-                                            color = RegalGold,
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text(
-                                            text = "Reputation: ${post.reputationImpact}%",
-                                            color = EmeraldSuccess,
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                    }
                                 }
                             }
 
-                            // Category badge tag
-                            Card(
-                                colors = CardDefaults.cardColors(containerColor = RegalGold.copy(alpha = 0.1f)),
-                                border = BorderStroke(0.5.dp, RegalGold),
-                                shape = RoundedCornerShape(10.dp)
+                            // Content
+                            Text(
+                                text = post.content,
+                                color = GhostWhite,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Normal,
+                                lineHeight = 20.sp,
+                                modifier = Modifier.padding(vertical = 12.dp)
+                            )
+
+                            // Custom Reactions row (Rejects generic dopamine likes)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(CharcoalObsidian.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = post.category,
+                                // Wise - adds KC to author
+                                ReactionButton(
+                                    emoji = "🧠",
+                                    tooltipText = "Wise",
+                                    count = post.knowledgeValue,
+                                    active = post.reactedWiseUsers.split(",").contains("me"),
                                     color = RegalGold,
-                                    fontSize = 11.sp,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                    onClick = { viewModel.reactToPost(post.id, "Wise") }
                                 )
-                            }
-                        }
 
-                        // Content
-                        Text(
-                            text = post.content,
-                            color = GhostWhite,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Normal,
-                            lineHeight = 20.sp,
-                            modifier = Modifier.padding(vertical = 12.dp)
-                        )
+                                // Helpful - adds CC to author
+                                ReactionButton(
+                                    emoji = "🤝",
+                                    tooltipText = "Helpful",
+                                    count = post.contributionProof,
+                                    active = post.reactedHelpfulUsers.split(",").contains("me"),
+                                    color = LustrousAmber,
+                                    onClick = { viewModel.reactToPost(post.id, "Helpful") }
+                                )
 
-                        // Custom Reactions row (Rejects generic dopamine likes)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(CharcoalObsidian.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Wise - adds KC to author
-                            ReactionButton(
-                                iconText = "🧠 Wise",
-                                count = post.knowledgeValue,
-                                active = post.reactedWiseUsers.split(",").contains("me"),
-                                color = RegalGold,
-                                onClick = { viewModel.reactToPost(post.id, "Wise") }
-                            )
+                                // Inspiring - elevates reputation score % of author
+                                ReactionButton(
+                                    emoji = "✨",
+                                    tooltipText = "Inspiring",
+                                    count = (post.reputationImpact - 90).coerceAtLeast(0),
+                                    active = post.reactedInspiringUsers.split(",").contains("me"),
+                                    color = ElectricBlue,
+                                    onClick = { viewModel.reactToPost(post.id, "Inspiring") }
+                                )
 
-                            // Helpful - adds CC to author
-                            ReactionButton(
-                                iconText = "🤝 Helpful",
-                                count = post.contributionProof,
-                                active = post.reactedHelpfulUsers.split(",").contains("me"),
-                                color = LustrousAmber,
-                                onClick = { viewModel.reactToPost(post.id, "Helpful") }
-                            )
-
-                            // Inspiring - elevates reputation score % of author
-                            ReactionButton(
-                                iconText = "✨ Inspiring",
-                                count = (post.reputationImpact - 90).coerceAtLeast(0),
-                                active = post.reactedInspiringUsers.split(",").contains("me"),
-                                color = ElectricBlue,
-                                onClick = { viewModel.reactToPost(post.id, "Inspiring") }
-                            )
-
-                            // Comment trigger
-                            IconButton(onClick = { viewModel.selectPostForComments(post.id) }) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.Comment, contentDescription = "Comments", tint = MutedSlate, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Chat", fontSize = 11.sp, color = MutedSlate)
+                                // Comment trigger
+                                val commentCount = commentCounts[post.id] ?: 0
+                                IconButton(
+                                    onClick = { viewModel.selectPostForComments(post.id) },
+                                    modifier = Modifier.padding(start = 2.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Comment,
+                                            contentDescription = "Comments",
+                                            tint = MutedSlate,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text(
+                                            text = commentCount.toString(),
+                                            color = MutedSlate,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -2591,81 +2621,113 @@ fun PublicSquareTab(viewModel: AppViewModel) {
             }
         }
 
-        // Quick composer panel
-        Card(
+        // Floating '+' action button for drafting new Posts (bottom right, above bottom nav bar)
+        FloatingActionButton(
+            onClick = { showComposerDialog = true },
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            colors = CardDefaults.cardColors(containerColor = VelvetCard),
-            border = BorderStroke(1.dp, RegalGold.copy(alpha = 0.4f)),
-            shape = RoundedCornerShape(16.dp)
+                .align(Alignment.BottomEnd)
+                .padding(bottom = 24.dp, end = 16.dp),
+            containerColor = RegalGold,
+            contentColor = CharcoalObsidian,
+            shape = CircleShape
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "Broadcast Entry to Public Square",
-                    color = GhostWhite,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
+            Icon(Icons.Default.Add, contentDescription = "Broadcast Entry", modifier = Modifier.size(24.dp))
+        }
+    }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = postContent,
-                    onValueChange = { postContent = it },
-                    placeholder = { Text("Draft long-form inquiry, article or societal debate...") },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = RegalGold,
-                        unfocusedBorderColor = MutedSlate.copy(alpha = 0.3f),
-                        focusedTextColor = GhostWhite,
-                        unfocusedTextColor = GhostWhite
-                    ),
-                    maxLines = 4,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Category selector row
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("Inquiry", "Article", "Debate").forEach { cat ->
-                            val isSel = cat == selectedCategory
-                            Card(
-                                modifier = Modifier.clickable { selectedCategory = cat },
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (isSel) RegalGold else MutedSlate.copy(alpha = 0.2f)
-                                ),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text(
-                                    text = cat,
-                                    color = if (isSel) CharcoalObsidian else GhostWhite,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
+    // Modal popup dialog containing "Broadcast Entry to Public Square" composer
+    if (showComposerDialog) {
+        Dialog(
+            onDismissRequest = { showComposerDialog = false }
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                colors = CardDefaults.cardColors(containerColor = VelvetCard),
+                border = BorderStroke(1.dp, RegalGold.copy(alpha = 0.4f)),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Broadcast to Public Square",
+                            color = GhostWhite,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        IconButton(onClick = { showComposerDialog = false }) {
+                            Icon(Icons.Default.Close, contentDescription = "Close", tint = MutedSlate)
                         }
                     }
 
-                    // Send Button
-                    IconButton(
-                        onClick = {
-                            if (postContent.isNotBlank()) {
-                                viewModel.createPost(postContent, selectedCategory)
-                                postContent = ""
-                            }
-                        },
-                        modifier = Modifier
-                            .background(RegalGold, CircleShape)
-                            .size(36.dp)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = postContent,
+                        onValueChange = { postContent = it },
+                        placeholder = { Text("Draft long-form inquiry, article or societal debate...", color = MutedSlate) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = RegalGold,
+                            unfocusedBorderColor = MutedSlate.copy(alpha = 0.3f),
+                            focusedTextColor = GhostWhite,
+                            unfocusedTextColor = GhostWhite,
+                            focusedPlaceholderColor = MutedSlate,
+                            unfocusedPlaceholderColor = MutedSlate
+                        ),
+                        minLines = 4,
+                        maxLines = 6,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.Send, contentDescription = "Send", tint = CharcoalObsidian, modifier = Modifier.size(16.dp))
+                        // Category selector row
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf("Inquiry", "Article", "Debate").forEach { cat ->
+                                val isSel = cat == selectedCategory
+                                Card(
+                                    modifier = Modifier.clickable { selectedCategory = cat },
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (isSel) RegalGold else MutedSlate.copy(alpha = 0.2f)
+                                    ),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text(
+                                        text = cat,
+                                        color = if (isSel) CharcoalObsidian else GhostWhite,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Send Button
+                        IconButton(
+                            onClick = {
+                                if (postContent.isNotBlank()) {
+                                    viewModel.createPost(postContent, selectedCategory)
+                                    postContent = ""
+                                    showComposerDialog = false
+                                }
+                            },
+                            modifier = Modifier
+                                .background(RegalGold, CircleShape)
+                                .size(36.dp)
+                        ) {
+                            Icon(Icons.Default.Send, contentDescription = "Send", tint = CharcoalObsidian, modifier = Modifier.size(16.dp))
+                        }
                     }
                 }
             }
@@ -2818,30 +2880,87 @@ fun PublicSquareTab(viewModel: AppViewModel) {
 
 @Composable
 fun ReactionButton(
-    iconText: String,
+    emoji: String,
+    tooltipText: String,
     count: Int,
     active: Boolean,
     color: Color,
     onClick: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.clickable { onClick() },
-        shape = RoundedCornerShape(6.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (active) color.copy(alpha = 0.15f) else Color.Transparent
-        ),
-        border = BorderStroke(0.5.dp, if (active) color else Color.Transparent)
+    var isHovered by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isHovered) {
+        if (isHovered) {
+            delay(2000)
+            isHovered = false
+        }
+    }
+
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier.padding(2.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Card(
+            modifier = Modifier
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = { onClick() },
+                        onLongPress = { isHovered = true }
+                    )
+                }
+                .pointerInput(Unit) {
+                    awaitPointerEventScope {
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            if (event.type == PointerEventType.Enter) {
+                                isHovered = true
+                            } else if (event.type == PointerEventType.Exit) {
+                                isHovered = false
+                            }
+                        }
+                    }
+                },
+            shape = RoundedCornerShape(8.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (active) color.copy(alpha = 0.15f) else Color.Transparent
+            ),
+            border = BorderStroke(0.5.dp, if (active) color else Color.Transparent)
         ) {
-            Text(
-                text = "$iconText ($count)",
-                color = if (active) color else MutedSlate,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "$emoji $count",
+                    color = if (active) color else MutedSlate,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        if (isHovered) {
+            Popup(
+                alignment = Alignment.TopCenter,
+                offset = IntOffset(0, -90),
+                properties = PopupProperties(focusable = false, dismissOnBackPress = true, dismissOnClickOutside = true),
+                onDismissRequest = { isHovered = false }
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = CharcoalObsidian),
+                    border = BorderStroke(1.dp, color.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.padding(4.dp)
+                ) {
+                    Text(
+                        text = tooltipText,
+                        color = GhostWhite,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
         }
     }
 }
