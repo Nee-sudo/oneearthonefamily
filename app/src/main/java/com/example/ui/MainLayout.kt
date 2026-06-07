@@ -1693,7 +1693,7 @@ fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostSt
                     selected = currentTab == DashboardTab.PublicSquare,
                     onClick = { viewModel.selectTab(DashboardTab.PublicSquare) },
                     icon = { Icon(Icons.Default.Feed, contentDescription = null) },
-                    label = { Text("Feed", fontSize = 10.sp) },
+                    label = { Text("Feed", fontSize = 10.sp, maxLines = 1, softWrap = false) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = RegalGold,
                         selectedTextColor = RegalGold,
@@ -1706,7 +1706,7 @@ fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostSt
                     selected = currentTab == DashboardTab.FindFriends,
                     onClick = { viewModel.selectTab(DashboardTab.FindFriends) },
                     icon = { Icon(Icons.Default.People, contentDescription = null) },
-                    label = { Text("Find Friends", fontSize = 10.sp) },
+                    label = { Text("Find Friends", fontSize = 9.sp, maxLines = 1, softWrap = false) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = RegalGold,
                         selectedTextColor = RegalGold,
@@ -1719,7 +1719,7 @@ fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostSt
                     selected = currentTab == DashboardTab.Messaging,
                     onClick = { viewModel.selectTab(DashboardTab.Messaging) },
                     icon = { Icon(Icons.Default.QuestionAnswer, contentDescription = null) },
-                    label = { Text("Chats", fontSize = 10.sp) },
+                    label = { Text("Chats", fontSize = 10.sp, maxLines = 1, softWrap = false) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = RegalGold,
                         selectedTextColor = RegalGold,
@@ -1732,7 +1732,7 @@ fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostSt
                     selected = currentTab == DashboardTab.ProfileAndElections,
                     onClick = { viewModel.selectTab(DashboardTab.ProfileAndElections) },
                     icon = { Icon(Icons.Default.HowToVote, contentDescription = null) },
-                    label = { Text("Elections", fontSize = 10.sp) },
+                    label = { Text("Elections", fontSize = 10.sp, maxLines = 1, softWrap = false) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = RegalGold,
                         selectedTextColor = RegalGold,
@@ -1745,7 +1745,7 @@ fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostSt
                     selected = currentTab == DashboardTab.MissionsAndLegends,
                     onClick = { viewModel.selectTab(DashboardTab.MissionsAndLegends) },
                     icon = { Icon(Icons.Default.WorkspacePremium, contentDescription = null) },
-                    label = { Text("Missions", fontSize = 10.sp) },
+                    label = { Text("Missions", fontSize = 10.sp, maxLines = 1, softWrap = false) },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = RegalGold,
                         selectedTextColor = RegalGold,
@@ -2967,28 +2967,111 @@ fun ReactionButton(
 }
 
 // ============================================================================
+// HOVERABLE FLAG FOR FIND FRIENDS (Hover/Click shows Territory tooltip)
+// ============================================================================
+@Composable
+fun HoverableFlag(flagEmoji: String, territory: String) {
+    var showTooltip by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val isHovered = event.type == PointerEventType.Enter || event.type == PointerEventType.Move
+                        val isExit = event.type == PointerEventType.Exit
+                        if (isHovered) {
+                            showTooltip = true
+                        } else if (isExit) {
+                            showTooltip = false
+                        }
+                    }
+                }
+            }
+            .clickable { showTooltip = !showTooltip }
+    ) {
+        Text(
+            text = flagEmoji,
+            fontSize = 15.sp,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+        )
+
+        if (showTooltip) {
+            androidx.compose.ui.window.Popup(
+                alignment = Alignment.TopCenter,
+                onDismissRequest = { showTooltip = false }
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = CharcoalObsidian),
+                    border = BorderStroke(0.5.dp, RegalGold),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.padding(top = 22.dp)
+                ) {
+                    Text(
+                        text = territory,
+                        color = RegalGold,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
 // FIND FRIENDS TAB (Active citizen profiles with interactive profile messaging)
 // ============================================================================
 @Composable
 fun FindFriendsTab(viewModel: AppViewModel) {
     val friends by viewModel.allFriends.collectAsState()
+    var searchQuery by remember { mutableStateOf("") }
+
+    val filteredFriends = remember(friends, searchQuery) {
+        if (searchQuery.isBlank()) {
+            friends
+        } else {
+            friends.filter {
+                it.name.contains(searchQuery, ignoreCase = true) ||
+                it.username.contains(searchQuery, ignoreCase = true) ||
+                it.territory.contains(searchQuery, ignoreCase = true)
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Text(
-            text = "Synchronize & Find Friends",
-            color = GhostWhite,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold
-        )
-        Text(
-            text = "Discover active planetary minds, review their imperial profiles, write direct messages, and build deep civic connections.",
-            color = MutedSlate,
-            fontSize = 12.sp,
-            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+        // High-contrast Search Filter Component replacing title/description
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = { Text("Search citizens by name, handle, or territory...", color = MutedSlate, fontSize = 13.sp) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = RegalGold, modifier = Modifier.size(20.dp)) },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Icon(Icons.Default.Clear, contentDescription = "Clear search", tint = MutedSlate, modifier = Modifier.size(20.dp))
+                    }
+                }
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = GhostWhite,
+                unfocusedTextColor = GhostWhite,
+                focusedBorderColor = RegalGold,
+                unfocusedBorderColor = RegalGold.copy(alpha = 0.3f),
+                focusedContainerColor = VelvetCard,
+                unfocusedContainerColor = VelvetCard
+            ),
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 12.dp)
         )
 
         LazyColumn(
@@ -2996,17 +3079,21 @@ fun FindFriendsTab(viewModel: AppViewModel) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
-            if (friends.isEmpty()) {
+            if (filteredFriends.isEmpty()) {
                 item {
                     Box(
                         modifier = Modifier.fillMaxWidth().padding(24.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("Searching for global citizens...", color = MutedSlate, fontSize = 13.sp)
+                        Text(
+                            text = if (searchQuery.isEmpty()) "Searching for global citizens..." else "No citizens match your search filter.",
+                            color = MutedSlate,
+                            fontSize = 13.sp
+                        )
                     }
                 }
             } else {
-                items(friends) { friend ->
+                items(filteredFriends) { friend ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -3030,19 +3117,30 @@ fun FindFriendsTab(viewModel: AppViewModel) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .clip(CircleShape)
-                                            .background(CharcoalObsidian)
-                                            .border(1.dp, RegalGold, CircleShape),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = friend.name.take(1).uppercase(),
-                                            color = RegalGold,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold
+                                    Box {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .clip(CircleShape)
+                                                .background(CharcoalObsidian)
+                                                .border(1.dp, RegalGold, CircleShape),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = friend.name.take(1).uppercase(),
+                                                color = RegalGold,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                        // Custom overlapping status indicator dot for live/active status
+                                        Box(
+                                            modifier = Modifier
+                                                .size(12.dp)
+                                                .clip(CircleShape)
+                                                .background(EmeraldSuccess)
+                                                .border(2.dp, VelvetCard, CircleShape)
+                                                .align(Alignment.BottomEnd)
                                         )
                                     }
                                     Spacer(modifier = Modifier.width(12.dp))
@@ -3055,13 +3153,32 @@ fun FindFriendsTab(viewModel: AppViewModel) {
                                                 fontWeight = FontWeight.Bold
                                             )
                                             Spacer(modifier = Modifier.width(6.dp))
-                                            Text(friend.flagEmoji, fontSize = 14.sp)
+                                            HoverableFlag(friend.flagEmoji, friend.territory)
                                         }
-                                        Text(
-                                            text = friend.username,
-                                            color = MutedSlate,
-                                            fontSize = 12.sp
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            modifier = Modifier.padding(top = 1.dp)
+                                        ) {
+                                            Text(
+                                                text = friend.username,
+                                                color = MutedSlate,
+                                                fontSize = 12.sp
+                                            )
+                                            Text("•", color = MutedSlate, fontSize = 11.sp)
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .clip(CircleShape)
+                                                    .background(EmeraldSuccess)
+                                            )
+                                            Text(
+                                                text = "Active Now",
+                                                color = EmeraldSuccess,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                 }
 
@@ -3080,7 +3197,7 @@ fun FindFriendsTab(viewModel: AppViewModel) {
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Spacer(modifier = Modifier.height(10.dp))
 
                             Text(
                                 text = friend.bio,
