@@ -84,7 +84,7 @@ interface OneEarthApiService {
 // ==========================================
 
 object ApiClient {
-    private var currentUrl = "https://ais-dev-zjsjrkjxwuyityhxwiiiws-941119958138.asia-southeast1.run.app/" // Live cloud development backend
+    private var currentUrl = "https://one-earth-dadyagc7bcc9hpcb.eastasia-01.azurewebsites.net/" // Live cloud development backend
     private var retrofit: Retrofit? = null
     private var itemService: OneEarthApiService? = null
 

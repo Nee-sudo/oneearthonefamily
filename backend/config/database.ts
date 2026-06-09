@@ -1,18 +1,23 @@
-import * as admin from 'firebase-admin';
+import { MongoClient, Db } from 'mongodb';
 import dotenv from 'dotenv';
-import * as path from 'path';
-import * as fs from 'fs';
 
 dotenv.config();
 
+let mongoClient: MongoClient | null = null;
+let mongoDb: Db | null = null;
 let db: any;
 let isMockDb = false;
 
+// --- MOCK DATABASE FALLBACK (For offline sandbox ease and stability) ---
 class MockDocRef {
   constructor(private collectionName: string, private docId: string, private mockDb: any) {}
 
   get path() {
     return `${this.collectionName}/${this.docId}`;
+  }
+
+  get ref() {
+    return this;
   }
 
   async get() {
@@ -133,96 +138,211 @@ class MockFirestore {
   }
 }
 
+
+// --- REAL MONGODB FIRESTORE ADAPTER IMPLEMENTATION ---
+
+class MongoDocRef {
+  constructor(private collectionName: string, private docId: string) {}
+
+  get id() {
+    return this.docId;
+  }
+
+  get path() {
+    return `${this.collectionName}/${this.docId}`;
+  }
+
+  get ref() {
+    return this;
+  }
+
+  async get() {
+    if (!mongoDb) {
+      throw new Error("Database not initialized");
+    }
+    const collection = mongoDb.collection(this.collectionName);
+    const data = await collection.findOne({ _id: this.docId as any });
+    return {
+      exists: data !== null,
+      id: this.docId,
+      ref: this,
+      data: () => {
+        if (!data) return undefined;
+        const { _id, ...rest } = data;
+        return rest;
+      }
+    };
+  }
+
+  async set(data: any) {
+    if (!mongoDb) {
+      throw new Error("Database not initialized");
+    }
+    const collection = mongoDb.collection(this.collectionName);
+    const documentToStore = { ...data, _id: this.docId };
+    await collection.replaceOne({ _id: this.docId as any }, documentToStore, { upsert: true });
+  }
+
+  async update(data: any) {
+    if (!mongoDb) {
+      throw new Error("Database not initialized");
+    }
+    const collection = mongoDb.collection(this.collectionName);
+    await collection.updateOne({ _id: this.docId as any }, { $set: data }, { upsert: true });
+  }
+
+  async delete() {
+    if (!mongoDb) {
+      throw new Error("Database not initialized");
+    }
+    const collection = mongoDb.collection(this.collectionName);
+    await collection.deleteOne({ _id: this.docId as any });
+  }
+}
+
+class MongoQuery {
+  protected queryObj: Record<string, any> = {};
+  protected limitVal: number = Infinity;
+
+  constructor(protected collectionName: string) {}
+
+  where(field: string, op: string, val: any) {
+    if (op === '==') {
+      this.queryObj[field] = val;
+    }
+    return this;
+  }
+
+  limit(n: number) {
+    this.limitVal = n;
+    return this;
+  }
+
+  async get() {
+    if (!mongoDb) {
+      throw new Error("Database not initialized");
+    }
+    const collection = mongoDb.collection(this.collectionName);
+    let cursor = collection.find(this.queryObj);
+    if (this.limitVal !== Infinity) {
+      cursor = cursor.limit(this.limitVal);
+    }
+    const results = await cursor.toArray();
+
+    const docs = results.map(doc => {
+      const docId = String(doc._id || doc.id || '');
+      const ref = new MongoDocRef(this.collectionName, docId);
+      return {
+        id: docId,
+        ref,
+        data: () => {
+          const { _id, ...rest } = doc;
+          return rest;
+        }
+      };
+    });
+
+    return {
+      empty: docs.length === 0,
+      docs
+    };
+  }
+}
+
+class MongoCollection extends MongoQuery {
+  constructor(collName: string) {
+    super(collName);
+  }
+
+  doc(id: string) {
+    return new MongoDocRef(this.collectionName, id);
+  }
+}
+
+class MongoTransaction {
+  async get(docRef: MongoDocRef) {
+    return docRef.get();
+  }
+
+  async set(docRef: MongoDocRef, data: any) {
+    await docRef.set(data);
+    return this;
+  }
+
+  async update(docRef: MongoDocRef, data: any) {
+    await docRef.update(data);
+    return this;
+  }
+
+  async delete(docRef: MongoDocRef) {
+    await docRef.delete();
+    return this;
+  }
+}
+
+class MongoFirestore {
+  collection(name: string) {
+    return new MongoCollection(name);
+  }
+
+  async runTransaction(cb: (transaction: any) => Promise<any>) {
+    const transaction = new MongoTransaction();
+    return cb(transaction);
+  }
+}
+
+
+// --- CONNECT / INITIALIZE EXPORTS ---
+
 export const connectDatabase = async (): Promise<void> => {
   try {
-    console.log('⚡ Firebase: Initializing Admin SDK...');
+    const mongoUri = process.env.MONGO_URI || 
+                     process.env.MONGO_URL || 
+                     process.env.MONGO_UR || 
+                     process.env.Mongo_ur || 
+                     'mongodb://127.0.0.1:27017/oneearth';
+                     
+    console.log('⚡ MongoDB: Initializing connection...');
+    // Mask credentials for clean logging output
+    const maskedUri = mongoUri.replace(/:([^:@]{4,})@/, ':****@');
+    console.log(`📡 Connection URI: ${maskedUri}`);
 
-    // If already initialized, avoid re-init
-    if (admin.apps.length > 0) {
-      db = admin.firestore();
-      return;
-    }
-
-    const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
-    const projectIdVar = process.env.FIREBASE_PROJECT_ID || 'one-earth-app';
-
-    // Auto-detect local serviceAccountKey.json file for VS Code local environment
-    const localKeyPath = path.join(process.cwd(), 'serviceAccountKey.json');
-    const localKeyPathConfig = path.join(__dirname, '..', 'serviceAccountKey.json');
-    const localKeyPathConfigDirect = path.join(__dirname, 'serviceAccountKey.json');
-
-    if (fs.existsSync(localKeyPath)) {
-      admin.initializeApp({
-        credential: admin.credential.cert(localKeyPath)
-      });
-      console.log(`✅ Firebase: Successfully initialized using local file credentials at "${localKeyPath}".`);
-    } else if (fs.existsSync(localKeyPathConfig)) {
-      admin.initializeApp({
-        credential: admin.credential.cert(localKeyPathConfig)
-      });
-      console.log(`✅ Firebase: Successfully initialized using local file credentials at "${localKeyPathConfig}".`);
-    } else if (fs.existsSync(localKeyPathConfigDirect)) {
-      admin.initializeApp({
-        credential: admin.credential.cert(localKeyPathConfigDirect)
-      });
-      console.log(`✅ Firebase: Successfully initialized using local file credentials at "${localKeyPathConfigDirect}".`);
-    } else if (serviceAccountVar) {
-      try {
-        const serviceAccount = JSON.parse(serviceAccountVar);
-        admin.initializeApp({
-          credential: admin.credential.cert(serviceAccount)
-        });
-        console.log('✅ Firebase: Successfully initialized with explicit service account JSON credential.');
-      } catch (err: any) {
-        console.error('⚠️ Firebase: Found FIREBASE_SERVICE_ACCOUNT but failed to parse JSON. Falling back to default auth.', err.message);
-        admin.initializeApp({
-          projectId: projectIdVar
-        });
-      }
-    } else {
-      // Allow fallback to standard environment auth or local emulator
-      admin.initializeApp({
-        projectId: projectIdVar
-      });
-      console.log(`✅ Firebase: Initialized with Project ID: "${projectIdVar}".`);
-    }
-
-    try {
-      console.log('⚡ Firebase: Verifying Firestore connectivity and credentials...');
-      const tempDb = admin.firestore();
-      // Perform a minimal, non-blocking check to verify credentials load successfully
-      await tempDb.collection('counters').limit(1).get();
-      db = tempDb;
-      console.log('✅ Firebase: Firestore instance successfully verified with fully functional credentials.');
-    } catch (testError: any) {
-      console.warn('⚠️ Firebase Credentials Verification Failed! (Usually means no serviceAccountKey.json or Google App Credentials found).');
-      console.warn('🔄 Failing gracefully: Initializing self-contained offline In-Memory Mock Database sandbox.');
-      isMockDb = true;
-      db = new MockFirestore();
-    }
+    mongoClient = new MongoClient(mongoUri, {
+      connectTimeoutMS: 5000,
+      socketTimeoutMS: 5000
+    });
+    
+    await mongoClient.connect();
+    mongoDb = mongoClient.db();
+    console.log('✅ MongoDB: Connected successfully to the active cluster database.');
+    isMockDb = false;
+    db = new MongoFirestore();
   } catch (error: any) {
-    console.error('❌ Firebase Admin SDK setup hit fatal error:', error.message);
-    console.warn('🔄 Failing gracefully: Initializing self-contained offline In-Memory Mock Database sandbox as fallback.');
+    console.error('❌ MongoDB Connection failed during server bootstrap:', error.message);
+    console.warn('🔄 Falling back gracefully to offline, self-contained mock persistent sandbox.');
     isMockDb = true;
     db = new MockFirestore();
   }
 };
 
-export const getFirestoreDb = (): admin.firestore.Firestore => {
+export const getFirestoreDb = (): any => {
   if (!db) {
     if (isMockDb) {
       db = new MockFirestore();
     } else {
-      db = admin.firestore();
+      db = new MongoFirestore();
     }
   }
-  return db as admin.firestore.Firestore;
+  return db;
 };
 
 export const disconnectDatabase = async (): Promise<void> => {
   try {
-    console.log('🔌 Firebase Admin: Disconnected safely from Cloud services.');
-  } catch (error) {
-    console.error('❌ Firebase: Error during disconnect:', error);
+    if (mongoClient) {
+      await mongoClient.close();
+      console.log('🔌 MongoDB: Connection closed safely.');
+    }
+  } catch (error: any) {
+    console.error('❌ MongoDB: Error encountered during disconnect:', error.message);
   }
 };

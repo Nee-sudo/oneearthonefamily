@@ -89,7 +89,8 @@ data class ChatMessageEntity(
     val senderId: String, // "me" or participant
     val senderName: String,
     val messageText: String,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val status: String = "Sent" // "Sent", "Delivered", or "Read"
 )
 
 @Entity(tableName = "profile_visitors")
@@ -170,6 +171,9 @@ interface PostDao {
 
     @Query("SELECT * FROM posts WHERE id = :postId LIMIT 1")
     suspend fun getPostById(postId: Int): PostEntity?
+
+    @Query("SELECT * FROM posts WHERE authorId = :authorId AND content = :content LIMIT 1")
+    suspend fun getPostByAuthorAndContent(authorId: String, content: String): PostEntity?
 }
 
 @Dao
@@ -182,6 +186,12 @@ interface CommentDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertComment(comment: CommentEntity)
+
+    @Query("SELECT * FROM comments WHERE postId = :postId AND authorName = :authorName AND content = :content LIMIT 1")
+    suspend fun getCommentByPostAuthorAndContent(postId: Int, authorName: String, content: String): CommentEntity?
+
+    @Delete
+    suspend fun deleteComment(comment: CommentEntity)
 }
 
 @Dao
@@ -209,6 +219,12 @@ interface ChatDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: ChatMessageEntity)
+
+    @Query("SELECT * FROM chat_messages WHERE roomId = :roomId AND senderId = :senderId AND messageText = :messageText LIMIT 1")
+    suspend fun getMessageByRoomSenderAndText(roomId: Int, senderId: String, messageText: String): ChatMessageEntity?
+
+    @Delete
+    suspend fun deleteMessage(message: ChatMessageEntity)
 }
 
 @Dao
@@ -256,7 +272,7 @@ interface HallOfLegendsDao {
         ImperialMissionEntity::class,
         HallOfLegendsEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

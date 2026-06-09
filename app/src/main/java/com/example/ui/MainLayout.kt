@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -1711,7 +1712,8 @@ fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostSt
         containerColor = DeepOceanSapphire,
         contentWindowInsets = ScaffoldDefaults.contentWindowInsets.exclude(WindowInsets.ime),
         topBar = {
-            TopAppBar(
+            if (currentTab != DashboardTab.Messaging) {
+                TopAppBar(
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -1923,6 +1925,7 @@ fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostSt
                     containerColor = VelvetCard
                 )
             )
+            }
         },
         bottomBar = {
             NavigationBar(
@@ -3228,7 +3231,7 @@ fun FindFriendsTab(viewModel: AppViewModel) {
                 singleLine = true,
                 modifier = Modifier
                     .weight(1f)
-                    .height(46.dp)
+                    .heightIn(min = 52.dp)
             )
 
             // Sorting Selection Dropdown menu button
@@ -3238,7 +3241,7 @@ fun FindFriendsTab(viewModel: AppViewModel) {
                     colors = ButtonDefaults.buttonColors(containerColor = VelvetCard),
                     border = BorderStroke(0.5.dp, RegalGold.copy(alpha = 0.5f)),
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.height(46.dp),
+                    modifier = Modifier.heightIn(min = 52.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp)
                 ) {
                     Row(
@@ -4006,11 +4009,17 @@ fun MessagingTab(viewModel: AppViewModel) {
                     .weight(1f)
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
+                verticalArrangement = Arrangement.spacedBy(0.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 8.dp)
             ) {
-                items(messagesList) { message ->
+                itemsIndexed(messagesList) { index, message ->
                     val isMe = message.senderId == "me"
+                    val prevMessage = if (index > 0) messagesList[index - 1] else null
+                    val isConsecutive = prevMessage != null && prevMessage.senderId == message.senderId
+                    val spaceBefore = if (isConsecutive) 2.dp else 8.dp
+
+                    Spacer(modifier = Modifier.height(spaceBefore))
+
                     Box(
                         modifier = Modifier.fillMaxWidth(),
                         contentAlignment = if (isMe) Alignment.CenterEnd else Alignment.CenterStart
@@ -4032,52 +4041,47 @@ fun MessagingTab(viewModel: AppViewModel) {
                             ),
                             border = BorderStroke(0.5.dp, if (isMe) RegalGold else MutedSlate.copy(alpha = 0.3f)),
                             shape = RoundedCornerShape(
-                                topStart = 16.dp,
-                                topEnd = 16.dp,
-                                bottomStart = if (isMe) 16.dp else 0.dp,
-                                bottomEnd = if (isMe) 0.dp else 16.dp
+                                topStart = if (isConsecutive && isMe) 4.dp else 12.dp,
+                                topEnd = if (isConsecutive && !isMe) 4.dp else 12.dp,
+                                bottomStart = if (isMe) 12.dp else 0.dp,
+                                bottomEnd = if (isMe) 0.dp else 12.dp
                             ),
                             modifier = Modifier
                                 .widthIn(max = 280.dp)
                                 .clickable {
                                     clipboardManager.setText(AnnotatedString(textToCopy))
-                                    Toast.makeText(localContext, "Copied to clipboard!", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(localContext, "Message copied!", Toast.LENGTH_SHORT).show()
                                 }
                         ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
+                            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                                 Text(
                                     text = textToCopy,
                                     color = GhostWhite,
-                                    fontSize = 14.sp
+                                    fontSize = 13.sp,
+                                    lineHeight = 17.sp
                                 )
-                                Spacer(modifier = Modifier.height(6.dp))
+                                Spacer(modifier = Modifier.height(1.dp))
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    // Day & Time
                                     Text(
                                         text = messageTimeAndDay,
                                         color = MutedSlate,
-                                        fontSize = 10.sp,
+                                        fontSize = 8.sp,
                                         fontWeight = FontWeight.Normal
                                     )
-                                    // Minimalist copy trigger
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
+                                    if (isMe) {
+                                        val (icon, tint) = when (message.status) {
+                                            "Read" -> Pair(Icons.Default.DoneAll, androidx.compose.ui.graphics.Color(0xFF34B7F1))
+                                            "Delivered" -> Pair(Icons.Default.DoneAll, MutedSlate.copy(alpha = 0.6f))
+                                            else -> Pair(Icons.Default.Done, MutedSlate.copy(alpha = 0.6f))
+                                        }
                                         Icon(
-                                            imageVector = Icons.Default.ContentCopy,
-                                            contentDescription = "Copy message",
-                                            tint = RegalGold.copy(alpha = 0.6f),
+                                            imageVector = icon,
+                                            contentDescription = message.status,
+                                            tint = tint,
                                             modifier = Modifier.size(11.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(3.dp))
-                                        Text(
-                                            text = "Copy",
-                                            color = MutedSlate,
-                                            fontSize = 8.sp
                                         )
                                     }
                                 }
@@ -4096,7 +4100,7 @@ fun MessagingTab(viewModel: AppViewModel) {
                     .fillMaxWidth()
                     .background(VelvetCard)
                     .imePadding()
-                    .padding(12.dp),
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
@@ -4104,8 +4108,9 @@ fun MessagingTab(viewModel: AppViewModel) {
                     onValueChange = { if (isConnectionActive) chatMessageText = it },
                     placeholder = { 
                         Text(
-                            if (isConnectionActive) "Compile constructive message..." 
-                            else "Archived slot: Swap from queue to activate & send"
+                            text = if (isConnectionActive) "message" 
+                            else "Archived slot: Swap from queue to activate & send",
+                            fontSize = 12.sp
                         ) 
                     },
                     enabled = isConnectionActive,
@@ -4118,10 +4123,12 @@ fun MessagingTab(viewModel: AppViewModel) {
                         disabledPlaceholderColor = MutedSlate.copy(alpha = 0.6f)
                     ),
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(max = 44.dp)
                 )
 
-                Spacer(modifier = Modifier.width(10.dp))
+                Spacer(modifier = Modifier.width(8.dp))
 
                 IconButton(
                     onClick = {
@@ -4135,9 +4142,14 @@ fun MessagingTab(viewModel: AppViewModel) {
                     enabled = isConnectionActive,
                     modifier = Modifier
                         .background(if (isConnectionActive) RegalGold else MutedSlate.copy(alpha = 0.3f), CircleShape)
-                        .size(46.dp)
+                        .size(38.dp)
                 ) {
-                    Icon(Icons.Default.Send, contentDescription = "Shoot", tint = if (isConnectionActive) CharcoalObsidian else MutedSlate)
+                    Icon(
+                        imageVector = Icons.Default.Send, 
+                        contentDescription = "Shoot", 
+                        tint = if (isConnectionActive) CharcoalObsidian else MutedSlate,
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             }
         }
