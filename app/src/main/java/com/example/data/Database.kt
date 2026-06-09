@@ -79,7 +79,8 @@ data class ChatRoomEntity(
     val lastMessage: String,
     val lastMessageTime: Long = System.currentTimeMillis(),
     val isActive: Boolean = true, // Max 3 active direct slots
-    val isWaiting: Boolean = false // If not active, it's in the waiting queue
+    val isWaiting: Boolean = false, // If not active, it's in the waiting queue
+    val isDeleted: Boolean = false
 )
 
 @Entity(tableName = "chat_messages")
@@ -196,13 +197,13 @@ interface CommentDao {
 
 @Dao
 interface ChatDao {
-    @Query("SELECT * FROM chat_rooms ORDER BY lastMessageTime DESC")
+    @Query("SELECT * FROM chat_rooms WHERE isDeleted = 0 ORDER BY lastMessageTime DESC")
     fun getAllRoomsFlow(): Flow<List<ChatRoomEntity>>
 
-    @Query("SELECT * FROM chat_rooms WHERE isActive = 1 ORDER BY lastMessageTime DESC")
+    @Query("SELECT * FROM chat_rooms WHERE isActive = 1 AND isDeleted = 0 ORDER BY lastMessageTime DESC")
     fun getActiveRoomsFlow(): Flow<List<ChatRoomEntity>>
 
-    @Query("SELECT * FROM chat_rooms WHERE isWaiting = 1 ORDER BY lastMessageTime DESC")
+    @Query("SELECT * FROM chat_rooms WHERE isWaiting = 1 AND isDeleted = 0 ORDER BY lastMessageTime DESC")
     fun getWaitingRoomsFlow(): Flow<List<ChatRoomEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -225,6 +226,12 @@ interface ChatDao {
 
     @Delete
     suspend fun deleteMessage(message: ChatMessageEntity)
+
+    @Query("UPDATE chat_rooms SET isDeleted = 1 WHERE id = :roomId")
+    suspend fun markRoomAsDeleted(roomId: Int)
+
+    @Query("DELETE FROM chat_messages WHERE roomId = :roomId")
+    suspend fun deleteMessagesForRoom(roomId: Int)
 }
 
 @Dao

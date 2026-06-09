@@ -3692,6 +3692,72 @@ fun MessagingTab(viewModel: AppViewModel) {
     val messagesList by viewModel.currentChatMessages.collectAsState()
 
     var chatMessageText by remember { mutableStateOf("") }
+    var roomToDelete by remember { mutableStateOf<ChatRoomEntity?>(null) }
+
+    if (roomToDelete != null) {
+        Dialog(onDismissRequest = { roomToDelete = null }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = VelvetCard),
+                border = BorderStroke(1.dp, RegalGold.copy(alpha = 0.6f)),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete Chat",
+                        tint = CrimsonRep,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Delete Connection?",
+                        color = GhostWhite,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Are you sure you want to permanently delete your chat with ${roomToDelete?.participantName?.split("|")?.lastOrNull()?.trim() ?: roomToDelete?.participantName}? This action will wipe all local messages.",
+                        color = MutedSlate,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        TextButton(
+                            onClick = { roomToDelete = null },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("CANCEL", color = MutedSlate, fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = {
+                                roomToDelete?.id?.let { id ->
+                                    viewModel.deleteRoom(id)
+                                }
+                                roomToDelete = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = CrimsonRep),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1.5f)
+                        ) {
+                            Text("DELETE", color = GhostWhite, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     if (selectedId == null) {
         Column(
@@ -3816,6 +3882,10 @@ fun MessagingTab(viewModel: AppViewModel) {
                                     IconButton(onClick = { viewModel.archiveRoom(room.id) }) {
                                         Icon(Icons.Default.Inventory, contentDescription = "Archive Slot", tint = MutedSlate, modifier = Modifier.size(20.dp))
                                     }
+                                    // Delete connection button
+                                    IconButton(onClick = { roomToDelete = room }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete Connection", tint = CrimsonRep.copy(alpha = 0.8f), modifier = Modifier.size(20.dp))
+                                    }
                                     Icon(Icons.Default.ChevronRight, contentDescription = null, tint = RegalGold)
                                 }
                             }
@@ -3905,13 +3975,26 @@ fun MessagingTab(viewModel: AppViewModel) {
                                     }
                                 }
 
-                                Button(
-                                    onClick = { viewModel.swapOrActivateRoom(room.id) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = RegalGold),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.height(32.dp)
-                                ) {
-                                    Text("ACTIVATE", color = CharcoalObsidian, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(
+                                        onClick = { roomToDelete = room },
+                                        modifier = Modifier.padding(end = 4.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Delete Connection",
+                                            tint = CrimsonRep.copy(alpha = 0.8f),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Button(
+                                        onClick = { viewModel.swapOrActivateRoom(room.id) },
+                                        colors = ButtonDefaults.buttonColors(containerColor = RegalGold),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.height(32.dp)
+                                    ) {
+                                        Text("ACTIVATE", color = CharcoalObsidian, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }
@@ -3983,15 +4066,31 @@ fun MessagingTab(viewModel: AppViewModel) {
                     }
                 }
 
-                // Fast archive trigger inside room
-                TextButton(
-                    onClick = {
-                        activeRoom?.id?.let { id ->
-                            viewModel.archiveRoom(id)
+                // Fast actions inside room
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        onClick = {
+                            activeRoom?.id?.let { id ->
+                                viewModel.archiveRoom(id)
+                            }
                         }
+                    ) {
+                        Text("ARCHIVE", color = RegalGold, fontWeight = FontWeight.Bold, fontSize = 11.sp)
                     }
-                ) {
-                    Text("ARCHIVE", color = CrimsonRep, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    IconButton(
+                        onClick = {
+                            activeRoom?.let { room ->
+                                roomToDelete = room
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete Connection",
+                            tint = CrimsonRep,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
 

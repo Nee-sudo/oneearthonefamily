@@ -345,11 +345,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun startRealtimeChatPolling() {
         viewModelScope.launch {
+            var allRoomsPollTick = 0
             while (true) {
                 try {
                     val roomId = _selectedRoomId.value
                     val user = userDao.getUserById("me")
                     val myName = user?.name ?: "Me"
+                    
+                    // 1. Poll currently open/active chat room for immediate responsiveness (every 1.5s)
                     if (roomId != null && _isBackendConnected.value) {
                         val remoteMessages = ApiClient.getService().getChatMessages(roomId)
                         var latestIncomingTime = 0L
@@ -359,10 +362,16 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                                 chatDao.deleteMessage(localMatch)
                             }
                             chatDao.insertMessage(msg)
+                            
+                            // Check if it's an incoming message from the other participant
                             if (!msg.senderName.equals(myName, ignoreCase = true) && 
                                 !msg.senderName.equals("Me", ignoreCase = true) &&
                                 !msg.senderId.startsWith("read_receipt") && 
                                 !msg.senderId.startsWith("delivered_receipt")) {
+                                
+                                // Direct delivery receipt triggered as it has reached the client
+                                triggerDeliveryReceipt(roomId, msg.timestamp)
+                                
                                 if (msg.timestamp > latestIncomingTime) {
                                     latestIncomingTime = msg.timestamp
                                 }
@@ -370,6 +379,35 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         }
                         if (latestIncomingTime > 0) {
                             triggerReadReceipt(roomId, latestIncomingTime)
+                        }
+                    }
+                    
+                    // 2. Poll other background active rooms to trigger Delivery status in the background (every ~4.5s)
+                    allRoomsPollTick++
+                    if (allRoomsPollTick >= 3 && _isBackendConnected.value) {
+                        allRoomsPollTick = 0
+                        // Safely collect active rooms
+                        val activeRooms = chatDao.getActiveRoomsFlow().first()
+                        activeRooms.forEach { activeRoom ->
+                            if (activeRoom.id != roomId) {
+                                val remoteMsgs = ApiClient.getService().getChatMessages(activeRoom.id)
+                                remoteMsgs.forEach { msg ->
+                                    val localMatch = chatDao.getMessageByRoomSenderAndText(msg.roomId, msg.senderId, msg.messageText)
+                                    if (localMatch != null && localMatch.id != msg.id) {
+                                        chatDao.deleteMessage(localMatch)
+                                    }
+                                    chatDao.insertMessage(msg)
+                                    
+                                    // Trigger Delivery receipt instantly
+                                    if (!msg.senderName.equals(myName, ignoreCase = true) && 
+                                        !msg.senderName.equals("Me", ignoreCase = true) &&
+                                        !msg.senderId.startsWith("read_receipt") && 
+                                        !msg.senderId.startsWith("delivered_receipt")) {
+                                        
+                                        triggerDeliveryReceipt(activeRoom.id, msg.timestamp)
+                                    }
+                                }
+                            }
                         }
                     }
                 } catch (e: Exception) {
@@ -414,7 +452,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 val remoteRooms = ApiClient.getService().getChatRooms()
                 if (remoteRooms.isNotEmpty()) {
                     remoteRooms.forEach { room ->
-                        chatDao.insertRoom(room)
+                        val local = chatDao.getRoomById(room.id)
+                        if (local == null) {
+                            chatDao.insertRoom(room)
+                        } else if (!local.isDeleted) {
+                            chatDao.insertRoom(room)
+                        }
                     }
                 }
 
@@ -455,7 +498,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     suspend fun saveUserAndRecalculateRank(user: UserEntity) {
         val calculatedRank = getRankFromCredits(user.knowledgeCredits, user.contributionCredits)
-        userDao.insertUser(user.copy(currentRank = calculatedRank))
+        val updated = user.copy(currentRank = calculatedRank)
+        userDao.insertUser(updated)
+        
+        // Save to MongoDB via our express api if the updated user is the active logged in user
+        if (updated.id == "me" && updated.email.isNotBlank() && _isBackendConnected.value) {
+            try {
+                ApiClient.getService().updateUserProfile(updated.email.lowercase().trim(), updated)
+            } catch (e: Exception) {
+                // Fail-safe
+            }
+        }
     }
 
     fun showProfileForUser(userId: String) {
@@ -887,12 +940,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             userDao.insertUser(user.copy(id = emailRegId))
             userDao.insertUser(user.copy(id = "user_$userRegId"))
 
-            // Try real server registration if backend is active
-            if (_isBackendConnected.value) {
+            // Try real server registration (attempt directly to ensure real-time storage)
+            try {
+                ApiClient.getService().registerUser(user)
+                _isBackendConnected.value = true
+                _toastMessage.emit("Security Passport registered online.")
+            } catch (e: Exception) {
+                // If register fails because user already exists on the server, try to update their profile
                 try {
-                    ApiClient.getService().registerUser(user)
-                    _toastMessage.emit("Security Passport registered online.")
-                } catch (e: Exception) {
+                    ApiClient.getService().updateUserProfile(user.email.lowercase().trim(), user)
+                    _isBackendConnected.value = true
+                    _toastMessage.emit("Security Passport updated online.")
+                } catch (ex: Exception) {
                     _toastMessage.emit("Registered locally. Cloud sync pending connection.")
                 }
             }
@@ -1129,19 +1188,36 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun deleteRoom(roomId: Int) {
+        viewModelScope.launch {
+            val room = chatDao.getRoomById(roomId) ?: return@launch
+            chatDao.markRoomAsDeleted(roomId)
+            chatDao.deleteMessagesForRoom(roomId)
+            if (_selectedRoomId.value == roomId) {
+                _selectedRoomId.value = null
+            }
+            _toastMessage.emit("Chat with ${room.participantName} deleted.")
+        }
+    }
+
     fun sendMessage(roomId: Int, text: String) {
         val trimmed = text.trim()
         if (trimmed.isBlank()) return
         viewModelScope.launch {
-            val lastSent = chatDao.getMessageByRoomSenderAndText(roomId, "me", trimmed)
+            val user = userDao.getUserById("me")
+            val myName = user?.name ?: "Me"
+            val myEmail = if (user != null && user.email.isNotBlank()) user.email else "me"
+
+            val lastSent = chatDao.getMessageByRoomSenderAndText(roomId, "me", trimmed) ?:
+                           chatDao.getMessageByRoomSenderAndText(roomId, myEmail, trimmed)
             if (lastSent != null && System.currentTimeMillis() - lastSent.timestamp < 3000) {
                 return@launch
             }
 
             val message = ChatMessageEntity(
                 roomId = roomId,
-                senderId = "me",
-                senderName = "Me",
+                senderId = myEmail,
+                senderName = myName,
                 messageText = trimmed,
                 timestamp = System.currentTimeMillis(),
                 status = "Sent"
@@ -1150,7 +1226,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             if (_isBackendConnected.value) {
                 try {
                     val savedMessageOnBackend = ApiClient.getService().sendChatMessage(roomId, message)
-                    val localDraft = chatDao.getMessageByRoomSenderAndText(roomId, "me", trimmed)
+                    val localDraft = chatDao.getMessageByRoomSenderAndText(roomId, "me", trimmed) ?:
+                                     chatDao.getMessageByRoomSenderAndText(roomId, myEmail, trimmed)
                     if (localDraft != null) {
                         chatDao.deleteMessage(localDraft)
                     }
@@ -1169,7 +1246,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     lastMessageTime = System.currentTimeMillis()
                 ))
             }
-            simulatePartnerReaction(roomId, message.timestamp)
         }
     }
 
