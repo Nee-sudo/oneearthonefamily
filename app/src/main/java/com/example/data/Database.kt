@@ -146,6 +146,9 @@ interface UserDao {
     @Query("DELETE FROM users WHERE id = :id")
     suspend fun deleteUserById(id: String)
 
+    @Query("DELETE FROM users")
+    suspend fun deleteAllUsers()
+
     @Query("SELECT * FROM users WHERE isCandidate = 1 AND id != 'me' AND id NOT LIKE 'user_%' ORDER BY votesCount DESC, knowledgeCredits DESC")
     fun getCandidatesFlow(): Flow<List<UserEntity>>
 
@@ -175,6 +178,9 @@ interface PostDao {
 
     @Query("SELECT * FROM posts WHERE authorId = :authorId AND content = :content LIMIT 1")
     suspend fun getPostByAuthorAndContent(authorId: String, content: String): PostEntity?
+
+    @Query("DELETE FROM posts")
+    suspend fun deleteAllPosts()
 }
 
 @Dao
@@ -193,6 +199,9 @@ interface CommentDao {
 
     @Delete
     suspend fun deleteComment(comment: CommentEntity)
+
+    @Query("DELETE FROM comments")
+    suspend fun deleteAllComments()
 }
 
 @Dao
@@ -230,8 +239,17 @@ interface ChatDao {
     @Query("UPDATE chat_rooms SET isDeleted = 1 WHERE id = :roomId")
     suspend fun markRoomAsDeleted(roomId: Int)
 
+    @Query("DELETE FROM chat_rooms WHERE id = :roomId")
+    suspend fun deleteRoomFromDb(roomId: Int)
+
     @Query("DELETE FROM chat_messages WHERE roomId = :roomId")
     suspend fun deleteMessagesForRoom(roomId: Int)
+
+    @Query("DELETE FROM chat_rooms")
+    suspend fun deleteAllRooms()
+
+    @Query("DELETE FROM chat_messages")
+    suspend fun deleteAllMessages()
 }
 
 @Dao
@@ -239,8 +257,14 @@ interface ProfileVisitorDao {
     @Query("SELECT * FROM profile_visitors ORDER BY timestamp DESC")
     fun getVisitorsFlow(): Flow<List<ProfileVisitorEntity>>
 
+    @Query("SELECT * FROM profile_visitors WHERE hostUserId = :hostUserId AND visitorName = :visitorName LIMIT 1")
+    suspend fun getVisitorRecord(hostUserId: String, visitorName: String): ProfileVisitorEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertVisitor(visitor: ProfileVisitorEntity)
+
+    @Query("DELETE FROM profile_visitors")
+    suspend fun deleteAllVisitors()
 }
 
 @Dao
@@ -253,6 +277,9 @@ interface MissionDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMission(mission: ImperialMissionEntity)
+
+    @Query("DELETE FROM imperial_missions")
+    suspend fun deleteAllMissions()
 }
 
 @Dao
@@ -262,6 +289,9 @@ interface HallOfLegendsDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLegend(legend: HallOfLegendsEntity)
+
+    @Query("DELETE FROM hall_of_legends")
+    suspend fun deleteAllLegends()
 }
 
 // ==========================================
@@ -279,7 +309,7 @@ interface HallOfLegendsDao {
         ImperialMissionEntity::class,
         HallOfLegendsEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

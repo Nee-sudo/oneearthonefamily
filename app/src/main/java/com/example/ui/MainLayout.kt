@@ -60,6 +60,22 @@ fun MainLayout(viewModel: AppViewModel) {
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val showSyncDialog by viewModel.showSyncSettingsDialog.collectAsState()
+    val activeNotification by viewModel.activeNotification.collectAsState()
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_START) {
+                viewModel.setAppInForeground(true)
+            } else if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                viewModel.setAppInForeground(false)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     // Collect Toast/Notification events from ViewModel
     LaunchedEffect(key1 = true) {
@@ -157,6 +173,100 @@ fun MainLayout(viewModel: AppViewModel) {
                 }
             }
         )
+
+        // Instagram-style dropdown in-app notification banner on top
+        AnimatedVisibility(
+            visible = activeNotification != null,
+            enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 16.dp, start = 12.dp, end = 12.dp)
+        ) {
+            activeNotification?.let { notification ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable {
+                            // Tap notification to seamlessly open that specific chat room!
+                            viewModel.navigateTo(Screen.MainDashboard)
+                            viewModel.selectTab(DashboardTab.Messaging)
+                            viewModel.selectRoom(notification.roomId)
+                            viewModel.dismissNotification()
+                        },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = VelvetCard.copy(alpha = 0.95f)),
+                    border = BorderStroke(1.dp, RegalGold.copy(alpha = 0.8f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = RegalGold.copy(alpha = 0.15f),
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Notifications,
+                                contentDescription = null,
+                                tint = RegalGold,
+                                modifier = Modifier
+                                    .padding(8.dp)
+                                    .size(20.dp)
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.width(12.dp))
+                        
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = notification.senderName,
+                                    color = GhostWhite,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp
+                                )
+                                Text(
+                                    text = "now",
+                                    color = MutedSlate,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = notification.messageText,
+                                color = GhostWhite.copy(alpha = 0.85f),
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.width(8.dp))
+                        
+                        IconButton(
+                            onClick = { viewModel.dismissNotification() },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Dismiss",
+                                tint = MutedSlate,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 
     if (showSyncDialog) {
@@ -563,7 +673,7 @@ fun RegistrationView(viewModel: AppViewModel) {
         // Symmetrical Gold Styled Inputs
         OutlinedTextField(
             value = name,
-            onValueChange = { name = it },
+            onValueChange = { name = it.replace("|", "") },
             label = { Text("Full Legal Name") },
             leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = RegalGold) },
             colors = OutlinedTextFieldDefaults.colors(
@@ -580,7 +690,7 @@ fun RegistrationView(viewModel: AppViewModel) {
 
         OutlinedTextField(
             value = username,
-            onValueChange = { username = it },
+            onValueChange = { username = it.filter { !it.isWhitespace() } },
             label = { Text("Unique Handle (@username)") },
             leadingIcon = { Icon(Icons.Default.AlternateEmail, contentDescription = null, tint = RegalGold) },
             colors = OutlinedTextFieldDefaults.colors(
@@ -597,7 +707,7 @@ fun RegistrationView(viewModel: AppViewModel) {
 
         OutlinedTextField(
             value = email,
-            onValueChange = { email = it },
+            onValueChange = { email = it.filter { !it.isWhitespace() } },
             label = { Text("Secure Email Address") },
             leadingIcon = { Icon(Icons.Default.Mail, contentDescription = null, tint = RegalGold) },
             isError = !isEmailValid,
@@ -1141,7 +1251,7 @@ fun LoginView(viewModel: AppViewModel) {
         // Symmetrical Gold Styled Inputs
         OutlinedTextField(
             value = identifier,
-            onValueChange = { identifier = it },
+            onValueChange = { identifier = it.filter { !it.isWhitespace() } },
             label = { Text("Email Address or Handle") },
             leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = RegalGold) },
             colors = OutlinedTextFieldDefaults.colors(
@@ -1904,6 +2014,20 @@ fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostSt
                                     }
                                 )
                                 DropdownMenuItem(
+                                    text = { Text("Clear All Data & Backend", color = CrimsonRep) },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Clear All Data",
+                                            tint = CrimsonRep
+                                        )
+                                    },
+                                    onClick = {
+                                        showMenu = false
+                                        viewModel.clearAllAppAndBackendData()
+                                    }
+                                )
+                                DropdownMenuItem(
                                     text = { Text("Logout", color = CrimsonRep) },
                                     leadingIcon = {
                                         Icon(
@@ -2135,11 +2259,12 @@ fun MainDashboardView(viewModel: AppViewModel, snackbarHostState: SnackbarHostSt
 @Composable
 fun ProfileDisplayDialog(user: UserEntity, viewModel: AppViewModel, onClose: () -> Unit) {
     var isEditingProfile by remember { mutableStateOf(false) }
-    var editName by remember { mutableStateOf(user.name) }
-    var editUsername by remember { mutableStateOf(user.username.removePrefix("@")) }
+    var editName by remember { mutableStateOf(user.name.replace("|", "")) }
+    var editUsername by remember { mutableStateOf(user.username.removePrefix("@").filter { !it.isWhitespace() }) }
     var editBio by remember { mutableStateOf(user.bio) }
     var editTerritory by remember { mutableStateOf(user.territory) }
     var editFlagEmoji by remember { mutableStateOf(user.flagEmoji) }
+    var postToDelete by remember { mutableStateOf<com.example.data.PostEntity?>(null) }
 
     Dialog(
         onDismissRequest = onClose,
@@ -2492,7 +2617,7 @@ fun ProfileDisplayDialog(user: UserEntity, viewModel: AppViewModel, onClose: () 
                                                 Icon(Icons.Default.Edit, contentDescription = "Edit Post", tint = RegalGold, modifier = Modifier.size(14.dp))
                                             }
                                             IconButton(
-                                                onClick = { viewModel.deletePost(post.id) },
+                                                onClick = { postToDelete = post },
                                                 modifier = Modifier.size(24.dp)
                                             ) {
                                                 Icon(Icons.Default.Delete, contentDescription = "Delete Post", tint = CrimsonRep, modifier = Modifier.size(14.dp))
@@ -2546,6 +2671,69 @@ fun ProfileDisplayDialog(user: UserEntity, viewModel: AppViewModel, onClose: () 
                     modifier = Modifier.fillMaxWidth().height(42.dp)
                 ) {
                     Text("CLOSE PARADIGM", color = CharcoalObsidian, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+
+    if (postToDelete != null) {
+        Dialog(onDismissRequest = { postToDelete = null }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = VelvetCard),
+                border = BorderStroke(1.dp, CrimsonRep),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = CrimsonRep,
+                        modifier = Modifier.size(36.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Verify Post Deletion",
+                        color = GhostWhite,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Are you sure you want to permanently delete this broadcast entry from the Ledger?",
+                        color = MutedSlate,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        TextButton(
+                            onClick = { postToDelete = null },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("CANCEL", color = MutedSlate, fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = {
+                                postToDelete?.let { post ->
+                                    viewModel.deletePost(post.id)
+                                }
+                                postToDelete = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = CrimsonRep),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1.5f)
+                        ) {
+                            Text("DELETE", color = GhostWhite, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         }
@@ -4275,12 +4463,13 @@ fun ElectionsAndProfileTab(viewModel: AppViewModel) {
 
     // Edit Profile state flows
     val showEditProfileModal by viewModel.showEditProfileDialog.collectAsState()
-    var editName by remember { mutableStateOf(me?.name ?: "") }
-    var editUsername by remember { mutableStateOf(me?.username?.removePrefix("@") ?: "") }
-    var editBio by remember { mutableStateOf(me?.bio ?: "") }
-    var editTerritory by remember { mutableStateOf(me?.territory ?: "") }
-    var editFlagEmoji by remember { mutableStateOf(me?.flagEmoji ?: "🌍") }
-    var editProfilePhoto by remember { mutableStateOf(me?.profilePhoto ?: "") }
+    var editName by remember(me?.name) { mutableStateOf(me?.name?.replace("|", "") ?: "") }
+    var editUsername by remember(me?.username) { mutableStateOf(me?.username?.removePrefix("@")?.filter { !it.isWhitespace() } ?: "") }
+    var editBio by remember(me?.bio) { mutableStateOf(me?.bio ?: "") }
+    var editTerritory by remember(me?.territory) { mutableStateOf(me?.territory ?: "") }
+    var editFlagEmoji by remember(me?.flagEmoji) { mutableStateOf(me?.flagEmoji ?: "🌍") }
+    var editProfilePhoto by remember(me?.profilePhoto) { mutableStateOf(me?.profilePhoto ?: "") }
+    var postToDelete by remember { mutableStateOf<PostEntity?>(null) }
 
     LaunchedEffect(showEditProfileModal) {
         if (showEditProfileModal && me != null) {
@@ -4833,7 +5022,7 @@ fun ElectionsAndProfileTab(viewModel: AppViewModel) {
 
                                             IconButton(
                                                 onClick = {
-                                                    viewModel.deletePost(post.id)
+                                                    postToDelete = post
                                                 },
                                                 modifier = Modifier.size(24.dp)
                                             ) {
@@ -5463,6 +5652,69 @@ fun ElectionsAndProfileTab(viewModel: AppViewModel) {
                             colors = ButtonDefaults.buttonColors(containerColor = RegalGold)
                         ) {
                             Text("UPDATE", color = CharcoalObsidian)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (postToDelete != null) {
+        Dialog(onDismissRequest = { postToDelete = null }) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = VelvetCard),
+                border = BorderStroke(1.5.dp, CrimsonRep),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = CrimsonRep,
+                        modifier = Modifier.size(36.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Verify Post Deletion",
+                        color = GhostWhite,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Are you sure you want to permanently delete this broadcast entry from the Ledger?",
+                        color = MutedSlate,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        TextButton(
+                            onClick = { postToDelete = null },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("CANCEL", color = MutedSlate, fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = {
+                                postToDelete?.let { post ->
+                                    viewModel.deletePost(post.id)
+                                }
+                                postToDelete = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = CrimsonRep),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1.5f)
+                        ) {
+                            Text("DELETE", color = GhostWhite, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

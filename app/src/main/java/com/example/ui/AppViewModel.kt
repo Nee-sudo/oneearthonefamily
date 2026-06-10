@@ -30,6 +30,13 @@ enum class DashboardTab {
     MissionsAndLegends
 }
 
+data class InAppNotification(
+    val roomId: Int,
+    val senderName: String,
+    val messageText: String,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = AppDatabase.getDatabase(application)
@@ -40,6 +47,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val visitorDao = db.visitorDao()
     private val missionDao = db.missionDao()
     private val legendsDao = db.legendsDao()
+
+    private val appStartedTime = System.currentTimeMillis()
+    private val shownNotificationKeys = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     // Screen State
     private val _currentScreen = MutableStateFlow<Screen>(Screen.Splash)
@@ -117,6 +127,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedRoomId = MutableStateFlow<Int?>(null)
     val selectedRoomId: StateFlow<Int?> = _selectedRoomId.asStateFlow()
 
+    private val _activeNotification = MutableStateFlow<InAppNotification?>(null)
+    val activeNotification: StateFlow<InAppNotification?> = _activeNotification.asStateFlow()
+
+    fun dismissNotification() {
+        _activeNotification.value = null
+    }
+
     val currentChatMessages: StateFlow<List<ChatMessageEntity>> = _selectedRoomId
         .flatMapLatest { id ->
             if (id != null) {
@@ -139,7 +156,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 .map { msg ->
                     val isMe = msg.senderName.equals(myName, ignoreCase = true) || 
                                msg.senderName.equals("Me", ignoreCase = true) ||
-                               msg.senderId == "me"
+                               msg.senderId == "me" ||
+                               (user != null && msg.senderId.equals(user.email, ignoreCase = true))
                     val mappedSenderId = if (isMe) "me" else "other"
                     val mappedSenderName = if (isMe) "Me" else msg.senderName
                     val evaluatedStatus = if (isMe) {
@@ -172,22 +190,42 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _showExitSummary = MutableStateFlow(false)
     val showExitSummary: StateFlow<Boolean> = _showExitSummary.asStateFlow()
 
+    private val sharedPrefs = application.getSharedPreferences("one_earth_settings", android.content.Context.MODE_PRIVATE)
+
+    // Foreground lifecycle flag
+    private val _isAppInForeground = MutableStateFlow(true)
+    val isAppInForeground: StateFlow<Boolean> = _isAppInForeground.asStateFlow()
+
+    fun setAppInForeground(inForeground: Boolean) {
+        _isAppInForeground.value = inForeground
+    }
+
     // Theme toggle state
-    private val _themeMode = MutableStateFlow(AppThemeMode.LIGHT)
+    private val _themeMode = MutableStateFlow(
+        try {
+            AppThemeMode.valueOf(sharedPrefs.getString("theme_mode", AppThemeMode.LIGHT.name) ?: AppThemeMode.LIGHT.name)
+        } catch (e: Exception) {
+            AppThemeMode.LIGHT
+        }
+    )
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
 
-    private val _isDarkTheme = MutableStateFlow(false)
+    private val _isDarkTheme = MutableStateFlow(
+        _themeMode.value != AppThemeMode.MINIMALIST_SLATE_LIGHT && _themeMode.value != AppThemeMode.LIGHT
+    )
     val isDarkTheme: StateFlow<Boolean> = _isDarkTheme.asStateFlow()
 
     fun toggleTheme() {
-        _themeMode.value = when (_themeMode.value) {
+        val nextMode = when (_themeMode.value) {
             AppThemeMode.DARK -> AppThemeMode.TWILIGHT_DUSK
             AppThemeMode.TWILIGHT_DUSK -> AppThemeMode.SPACE_ABYSS_DARK
             AppThemeMode.SPACE_ABYSS_DARK -> AppThemeMode.MINIMALIST_SLATE_LIGHT
             AppThemeMode.MINIMALIST_SLATE_LIGHT -> AppThemeMode.LIGHT
             AppThemeMode.LIGHT -> AppThemeMode.DARK
         }
-        _isDarkTheme.value = _themeMode.value != AppThemeMode.MINIMALIST_SLATE_LIGHT && _themeMode.value != AppThemeMode.LIGHT
+        _themeMode.value = nextMode
+        _isDarkTheme.value = nextMode != AppThemeMode.MINIMALIST_SLATE_LIGHT && nextMode != AppThemeMode.LIGHT
+        sharedPrefs.edit().putString("theme_mode", nextMode.name).apply()
     }
 
     // API/Backend states and dynamic controls
@@ -298,13 +336,27 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val loggedInUser = userDao.getUserById("me")
             if (loggedInUser != null) {
-                _currentScreen.value = Screen.MainDashboard
+                if (loggedInUser.onboardingCompleted && loggedInUser.citizenOathAccepted) {
+                    _currentScreen.value = Screen.MainDashboard
+                } else if (!loggedInUser.onboardingCompleted) {
+                    if (loggedInUser.territory.isBlank()) {
+                        _currentScreen.value = Screen.TerritorySelection
+                    } else if (loggedInUser.personalityTraits.isBlank()) {
+                        _currentScreen.value = Screen.PersonalitySetup
+                    } else {
+                        _currentScreen.value = Screen.CitizenOath
+                    }
+                } else if (!loggedInUser.citizenOathAccepted) {
+                    _currentScreen.value = Screen.CitizenOath
+                }
             }
         }
     }
 
     fun performLogout() {
         viewModelScope.launch {
+            _selectedRoomId.value = null
+            _activeNotification.value = null
             userDao.deleteUserById("me")
             _currentScreen.value = Screen.Splash
         }
@@ -324,94 +376,135 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private fun startBackendHealthChecking() {
         viewModelScope.launch {
             while (true) {
-                try {
-                    val response = ApiClient.getService().checkHealth()
-                    val wasConnected = _isBackendConnected.value
-                    _isBackendConnected.value = (response.status == "ok" || response.status.isNotBlank())
-                    if (!wasConnected && _isBackendConnected.value) {
-                        _toastMessage.emit("Connected to One Earth Network Backend!")
-                        syncAllWithBackend()
-                    } else if (_isBackendConnected.value) {
-                        // Periodic background sync of users, posts, and chats
-                        syncAllWithBackend()
+                if (_isAppInForeground.value) {
+                    try {
+                        val response = ApiClient.getService().checkHealth()
+                        val wasConnected = _isBackendConnected.value
+                        _isBackendConnected.value = (response.status == "ok" || response.status.isNotBlank())
+                        if (!wasConnected && _isBackendConnected.value) {
+                            _toastMessage.emit("Connected to One Earth Network Backend!")
+                            syncAllWithBackend()
+                        } else if (_isBackendConnected.value) {
+                            // Periodic background sync of users, posts, and chats
+                            syncAllWithBackend()
+                        }
+                    } catch (e: Exception) {
+                        _isBackendConnected.value = false
                     }
-                } catch (e: Exception) {
-                    _isBackendConnected.value = false
                 }
                 kotlinx.coroutines.delay(8000) // check every 8 seconds
             }
         }
     }
 
+    fun isChatRoomOpen(roomId: Int): Boolean {
+        return _currentScreen.value == Screen.MainDashboard &&
+               _currentTab.value == DashboardTab.Messaging &&
+               _selectedRoomId.value == roomId
+    }
+
     private fun startRealtimeChatPolling() {
         viewModelScope.launch {
             var allRoomsPollTick = 0
             while (true) {
-                try {
-                    val roomId = _selectedRoomId.value
-                    val user = userDao.getUserById("me")
-                    val myName = user?.name ?: "Me"
-                    
-                    // 1. Poll currently open/active chat room for immediate responsiveness (every 1.5s)
-                    if (roomId != null && _isBackendConnected.value) {
-                        val remoteMessages = ApiClient.getService().getChatMessages(roomId)
-                        var latestIncomingTime = 0L
-                        remoteMessages.forEach { msg ->
-                            val localMatch = chatDao.getMessageByRoomSenderAndText(msg.roomId, msg.senderId, msg.messageText)
-                            if (localMatch != null && localMatch.id != msg.id) {
-                                chatDao.deleteMessage(localMatch)
-                            }
-                            chatDao.insertMessage(msg)
-                            
-                            // Check if it's an incoming message from the other participant
-                            if (!msg.senderName.equals(myName, ignoreCase = true) && 
-                                !msg.senderName.equals("Me", ignoreCase = true) &&
-                                !msg.senderId.startsWith("read_receipt") && 
-                                !msg.senderId.startsWith("delivered_receipt")) {
-                                
-                                // Direct delivery receipt triggered as it has reached the client
-                                triggerDeliveryReceipt(roomId, msg.timestamp)
-                                
-                                if (msg.timestamp > latestIncomingTime) {
-                                    latestIncomingTime = msg.timestamp
+                if (_isAppInForeground.value) {
+                    try {
+                        val roomId = _selectedRoomId.value
+                        val user = userDao.getUserById("me")
+                        if (user == null) {
+                            _activeNotification.value = null
+                            kotlinx.coroutines.delay(1500)
+                            continue
+                        }
+                        val myName = user.name ?: "Me"
+                        
+                        // 1. Poll currently open/active chat room for immediate responsiveness (every 1.5s)
+                        if (roomId != null && _isBackendConnected.value) {
+                            val remoteMessages = ApiClient.getService().getChatMessages(roomId)
+                            var latestIncomingTime = 0L
+                            remoteMessages.forEach { msg ->
+                                val localMatch = chatDao.getMessageByRoomSenderAndText(msg.roomId, msg.senderId, msg.messageText)
+                                val alreadyExists = localMatch != null
+                                if (localMatch != null && localMatch.id != msg.id) {
+                                    chatDao.deleteMessage(localMatch)
                                 }
-                            }
-                        }
-                        if (latestIncomingTime > 0) {
-                            triggerReadReceipt(roomId, latestIncomingTime)
-                        }
-                    }
-                    
-                    // 2. Poll other background active rooms to trigger Delivery status in the background (every ~4.5s)
-                    allRoomsPollTick++
-                    if (allRoomsPollTick >= 3 && _isBackendConnected.value) {
-                        allRoomsPollTick = 0
-                        // Safely collect active rooms
-                        val activeRooms = chatDao.getActiveRoomsFlow().first()
-                        activeRooms.forEach { activeRoom ->
-                            if (activeRoom.id != roomId) {
-                                val remoteMsgs = ApiClient.getService().getChatMessages(activeRoom.id)
-                                remoteMsgs.forEach { msg ->
-                                    val localMatch = chatDao.getMessageByRoomSenderAndText(msg.roomId, msg.senderId, msg.messageText)
-                                    if (localMatch != null && localMatch.id != msg.id) {
-                                        chatDao.deleteMessage(localMatch)
-                                    }
-                                    chatDao.insertMessage(msg)
+                                chatDao.insertMessage(msg)
+                                
+                                // Check if it's an incoming message from the other participant
+                                if (!msg.senderName.equals(myName, ignoreCase = true) && 
+                                    !msg.senderName.equals("Me", ignoreCase = true) &&
+                                    !msg.senderId.startsWith("read_receipt") && 
+                                    !msg.senderId.startsWith("delivered_receipt")) {
                                     
-                                    // Trigger Delivery receipt instantly
-                                    if (!msg.senderName.equals(myName, ignoreCase = true) && 
-                                        !msg.senderName.equals("Me", ignoreCase = true) &&
-                                        !msg.senderId.startsWith("read_receipt") && 
-                                        !msg.senderId.startsWith("delivered_receipt")) {
+                                    // Direct delivery receipt triggered as it has reached the client
+                                    triggerDeliveryReceipt(roomId, msg.timestamp)
+                                    
+                                    if (!alreadyExists && !isChatRoomOpen(roomId) && msg.timestamp >= appStartedTime - 5000) {
+                                        val notifKey = "${roomId}_${msg.timestamp}"
+                                        if (!shownNotificationKeys.contains(notifKey)) {
+                                            shownNotificationKeys.add(notifKey)
+                                            _activeNotification.value = InAppNotification(
+                                                roomId = roomId,
+                                                senderName = msg.senderName,
+                                                messageText = msg.messageText
+                                            )
+                                        }
+                                    }
+                                    
+                                    if (msg.timestamp > latestIncomingTime) {
+                                        latestIncomingTime = msg.timestamp
+                                    }
+                                }
+                            }
+                            if (latestIncomingTime > 0) {
+                                triggerReadReceipt(roomId, latestIncomingTime)
+                            }
+                        }
+                        
+                        // 2. Poll other background active rooms to trigger Delivery status in the background (every ~4.5s)
+                        allRoomsPollTick++
+                        if (allRoomsPollTick >= 3 && _isBackendConnected.value) {
+                            allRoomsPollTick = 0
+                            // Safely collect active rooms
+                            val activeRooms = chatDao.getActiveRoomsFlow().first()
+                            activeRooms.forEach { activeRoom ->
+                                if (activeRoom.id != roomId) {
+                                    val remoteMsgs = ApiClient.getService().getChatMessages(activeRoom.id)
+                                    remoteMsgs.forEach { msg ->
+                                        val localMatch = chatDao.getMessageByRoomSenderAndText(msg.roomId, msg.senderId, msg.messageText)
+                                        val alreadyExists = localMatch != null
+                                        if (localMatch != null && localMatch.id != msg.id) {
+                                            chatDao.deleteMessage(localMatch)
+                                        }
+                                        chatDao.insertMessage(msg)
                                         
-                                        triggerDeliveryReceipt(activeRoom.id, msg.timestamp)
+                                        // Trigger Delivery receipt instantly
+                                        if (!msg.senderName.equals(myName, ignoreCase = true) && 
+                                            !msg.senderName.equals("Me", ignoreCase = true) &&
+                                            !msg.senderId.startsWith("read_receipt") && 
+                                            !msg.senderId.startsWith("delivered_receipt")) {
+                                            
+                                            triggerDeliveryReceipt(activeRoom.id, msg.timestamp)
+          
+                                             if (!alreadyExists && !isChatRoomOpen(activeRoom.id) && msg.timestamp >= appStartedTime - 5000) {
+                                                 val notifKey = "${activeRoom.id}_${msg.timestamp}"
+                                                 if (!shownNotificationKeys.contains(notifKey)) {
+                                                     shownNotificationKeys.add(notifKey)
+                                                     _activeNotification.value = InAppNotification(
+                                                         roomId = activeRoom.id,
+                                                         senderName = msg.senderName,
+                                                         messageText = msg.messageText
+                                                     )
+                                                 }
+                                             }
+                                        }
                                     }
                                 }
                             }
                         }
+                    } catch (e: Exception) {
+                        // Fail-safe
                     }
-                } catch (e: Exception) {
-                    // Fail-safe
                 }
                 kotlinx.coroutines.delay(1500) // Poll every 1.5 seconds for real-time responsiveness
             }
@@ -449,7 +542,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 // 2. Sync Chat Rooms from Backend
-                val remoteRooms = ApiClient.getService().getChatRooms()
+                val remoteRooms = ApiClient.getService().getChatRooms(me?.name)
                 if (remoteRooms.isNotEmpty()) {
                     remoteRooms.forEach { room ->
                         val local = chatDao.getRoomById(room.id)
@@ -744,14 +837,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val me = userDao.getUserById("me")
             if (me != null && me.id != hostUser.id) {
-                val visitor = ProfileVisitorEntity(
-                    hostUserId = hostUser.id,
-                    visitorName = me.name,
-                    visitorTerritory = me.territory,
-                    visitorFlag = me.flagEmoji,
-                    visitorRank = me.currentRank,
-                    timestamp = System.currentTimeMillis()
-                )
+                val existing = visitorDao.getVisitorRecord(hostUser.id, me.name)
+                val visitor = if (existing != null) {
+                    existing.copy(timestamp = System.currentTimeMillis())
+                } else {
+                    ProfileVisitorEntity(
+                        hostUserId = hostUser.id,
+                        visitorName = me.name,
+                        visitorTerritory = me.territory,
+                        visitorFlag = me.flagEmoji,
+                        visitorRank = me.currentRank,
+                        timestamp = System.currentTimeMillis()
+                    )
+                }
                 visitorDao.insertVisitor(visitor)
                 _toastMessage.emit("Notification dispatched: ${me.name} (${me.flagEmoji}) viewed ${hostUser.name}'s profile!")
             }
@@ -824,40 +922,40 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             id = 1,
             subject = "Philosophy",
             question = "Which system emphasizes wisdom, ethical contribution, and service over simple numeric majorities as a driver of societal rank?",
-            options = listOf("Platonic Meritocracy", "Dopamine Plutocracy", "Technocratic Autocracy", "Oligarchic Populism"),
-            correctAnswerIndex = 0,
+            options = listOf("Technocratic Autocracy", "Dopamine Plutocracy", "Platonic Meritocracy", "Oligarchic Populism"),
+            correctAnswerIndex = 2,
             explanation = "Plato's Republic envisioned a society governed by Philosopher Guardians where wisdom and service govern societal standing."
         ),
         QuizQuestion(
             id = 2,
             subject = "Economics",
             question = "In the 'One Earth One Family' civilization, why are Knowledge Credits (KC) and Contribution Credits (CC) non-transferable?",
-            options = listOf("To avoid monetary commodification of character", "Because of network latency", "To encourage anonymous trading", "To mimic national currencies"),
-            correctAnswerIndex = 0,
+            options = listOf("Because of network latency", "To avoid monetary commodification of character", "To mimic national currencies", "To encourage anonymous trading"),
+            correctAnswerIndex = 1,
             explanation = "To prevent wealth-based capture of administrative influence. Status must be earned through pure personal merit and cannot be purchased."
         ),
         QuizQuestion(
             id = 3,
             subject = "Science",
             question = "What global biosphere feedback mechanism suggests that living organisms interact with their inorganic surroundings to maintain homeostasis?",
-            options = "Gaia Hypothesis,Nebular Hypothesis,Kepler Principle,Ecosystem Static Rule".split(","),
-            correctAnswerIndex = 0,
+            options = "Kepler Principle,Nebular Hypothesis,Ecosystem Static Rule,Gaia Hypothesis".split(","),
+            correctAnswerIndex = 3,
             explanation = "The Gaia Hypothesis, formulated by James Lovelock, views Earth as a complex self-regulating system."
         ),
         QuizQuestion(
             id = 4,
             subject = "Technology",
             question = "Which paradigm prevents dopamine-farming, infinite scroll metrics by placing structural limits on conversational slots?",
-            options = "The Three-Connection Rule,Cognitive Load Compression,Socket Throttling,Interactive Queueing".split(","),
-            correctAnswerIndex = 0,
+            options = "Socket Throttling,The Three-Connection Rule,Cognitive Load Compression,Interactive Queueing".split(","),
+            correctAnswerIndex = 1,
             explanation = "OEOF enforces active connection limits to combat infinite distraction, prioritizing qualitative depth in human relationship."
         ),
         QuizQuestion(
             id = 5,
             subject = "History",
             question = "Which historical leader's philosophy directly aligns with 'Leadership through Service' through non-violent communal reform?",
-            options = "Mahatma Gandhi,Julius Caesar,Napoleon Bonaparte,Alexander the Great".split(","),
-            correctAnswerIndex = 0,
+            options = "Julius Caesar,Napoleon Bonaparte,Mahatma Gandhi,Alexander the Great".split(","),
+            correctAnswerIndex = 2,
             explanation = "Gandhi's model of leadership focused on self-discipline, service to truth, and direct positive community action."
         )
     )
@@ -1192,9 +1290,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val room = chatDao.getRoomById(roomId) ?: return@launch
             chatDao.markRoomAsDeleted(roomId)
+            // chatDao.deleteRoomFromDb(roomId) // soft delete only so that it is not redownloaded and recreated during sync/polling
             chatDao.deleteMessagesForRoom(roomId)
             if (_selectedRoomId.value == roomId) {
                 _selectedRoomId.value = null
+            }
+            if (_isBackendConnected.value) {
+                try {
+                    ApiClient.getService().deleteChatRoom(roomId)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
             _toastMessage.emit("Chat with ${room.participantName} deleted.")
         }
@@ -1246,20 +1352,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     lastMessageTime = System.currentTimeMillis()
                 ))
             }
+
+            simulatePartnerReaction(roomId, message.timestamp)
         }
     }
 
     private fun mapRoomForUser(room: ChatRoomEntity, myName: String): ChatRoomEntity {
         val parts = room.participantName.split(" | ")
-        if (parts.size == 2) {
+        if (parts.size >= 2) {
             val isCreator = parts[0].equals(myName, ignoreCase = true)
-            val partnerName = if (isCreator) parts[1] else parts[0]
+            val partnerName = if (isCreator) parts.last() else parts[0]
             val flags = room.participantFlag.split(" | ")
-            val partnerFlag = if (flags.size == 2) (if (isCreator) flags[1] else flags[0]) else room.participantFlag
+            val partnerFlag = if (flags.size >= 2) (if (isCreator) flags.last() else flags[0]) else room.participantFlag
             val ranks = room.participantRank.split(" | ")
-            val partnerRank = if (ranks.size == 2) (if (isCreator) ranks[1] else ranks[0]) else room.participantRank
+            val partnerRank = if (ranks.size >= 2) (if (isCreator) ranks.last() else ranks[0]) else room.participantRank
             val territories = room.participantTerritory.split(" | ")
-            val partnerTerritory = if (territories.size == 2) (if (isCreator) territories[1] else territories[0]) else room.participantTerritory
+            val partnerTerritory = if (territories.size >= 2) (if (isCreator) territories.last() else territories[0]) else room.participantTerritory
             return room.copy(
                 participantName = partnerName,
                 participantFlag = partnerFlag,
@@ -1338,8 +1446,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun simulatePartnerReaction(roomId: Int, messageTimestamp: Long) {
         viewModelScope.launch {
+            val me = userDao.getUserById("me") ?: return@launch
             val room = chatDao.getRoomById(roomId) ?: return@launch
-            val myName = userDao.getUserById("me")?.name ?: "Me"
+            val myName = me.name ?: "Me"
             val parts = room.participantName.split(" | ")
             val partnerName = if (parts.size == 2) {
                 val isCreator = parts[0].equals(myName, ignoreCase = true)
@@ -1379,33 +1488,6 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     ApiClient.getService().sendChatMessage(roomId, readReceipt)
                 } catch (e: Exception) { }
             }
-
-            // 3. Real-Time Chat Partner automated typing simulated reply
-            kotlinx.coroutines.delay(1200)
-            val replyText = getDynamicPartnerReply(partnerName)
-            val replyMessage = ChatMessageEntity(
-                roomId = roomId,
-                senderId = "other",
-                senderName = partnerName,
-                messageText = replyText,
-                timestamp = System.currentTimeMillis(),
-                status = "Read"
-            )
-            chatDao.insertMessage(replyMessage)
-            if (_isBackendConnected.value) {
-                try {
-                    ApiClient.getService().sendChatMessage(roomId, replyMessage)
-                } catch (e: Exception) { }
-            }
-
-            // Update room's last message on both clients
-            val freshRoom = chatDao.getRoomById(roomId)
-            if (freshRoom != null) {
-                chatDao.updateRoom(freshRoom.copy(
-                    lastMessage = replyText,
-                    lastMessageTime = replyMessage.timestamp
-                ))
-            }
         }
     }
 
@@ -1422,8 +1504,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // Register candidacy for Sovereign Crown Elections
     fun registerElectionsCandidate(manifesto: String, vision: String) {
         viewModelScope.launch {
-            val me = userDao.getUserById("me") ?: return@launch
+            var me = userDao.getUserById("me") ?: return@launch
             // Validation requirements: must maintain Verified status & high-tier marks
+            if (_isBackendConnected.value && me.email.isNotBlank()) {
+                try {
+                    val serverProfile = ApiClient.getService().getUserProfile(me.email.lowercase().trim())
+                    me = serverProfile.copy(id = "me")
+                    userDao.insertUser(me)
+                } catch (e: Exception) {
+                    // Safe fallback
+                }
+            }
+
             if (me.knowledgeCredits < 150 || me.contributionCredits < 80) {
                 _toastMessage.emit("Eligibility Fail: Need at least 150 KC & 80 CC to run for administrative office.")
                 return@launch
@@ -1433,9 +1525,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 isCandidate = true,
                 campaignManifesto = manifesto,
                 campaignVision = vision,
-                votesCount = 1 // Start with their own vote
+                votesCount = maxOf(me.votesCount, 1) // Start with their own vote
             )
             userDao.insertUser(updated)
+            
+            if (_isBackendConnected.value && me.email.isNotBlank()) {
+                try {
+                    ApiClient.getService().updateUserProfile(me.email.lowercase().trim(), updated)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
             _toastMessage.emit("Dossier submitted! You are registered for the democratic Sovereign crown!")
         }
     }
@@ -1450,8 +1550,23 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
             val candidate = userDao.getUserById(candidateId)
             if (candidate != null) {
-                userDao.insertUser(candidate.copy(votesCount = candidate.votesCount + 1))
-                userDao.insertUser(me.copy(hasVoted = true))
+                val updatedCandidate = candidate.copy(votesCount = candidate.votesCount + 1)
+                val updatedMe = me.copy(hasVoted = true)
+                userDao.insertUser(updatedCandidate)
+                userDao.insertUser(updatedMe)
+                
+                if (_isBackendConnected.value) {
+                    try {
+                        if (candidate.email.isNotBlank()) {
+                            ApiClient.getService().updateUserProfile(candidate.email.lowercase().trim(), updatedCandidate)
+                        }
+                        if (me.email.isNotBlank()) {
+                            ApiClient.getService().updateUserProfile(me.email.lowercase().trim(), updatedMe)
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
                 _toastMessage.emit("Ballot securely logged in the open Ledger!")
             }
         }
@@ -1466,8 +1581,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
-            // Update user credit
-            userDao.insertUser(me.copy(contributionCredits = me.contributionCredits - points))
+            // Update user credit and rank (resolves rank threshold update lag)
+            saveUserAndRecalculateRank(me.copy(contributionCredits = me.contributionCredits - points))
 
             // Update mission progress
             // In our database we find the active mission
@@ -1506,8 +1621,63 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun clearAllAppAndBackendData() {
+        viewModelScope.launch {
+            _toastMessage.emit("Clearing local database & cleaning remote backend...")
+            
+            if (_isBackendConnected.value) {
+                try {
+                    val rooms = ApiClient.getService().getChatRooms(null)
+                    rooms.forEach { room ->
+                        try {
+                            ApiClient.getService().deleteChatRoom(room.id)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                    
+                    val posts = ApiClient.getService().getPosts()
+                    posts.forEach { post ->
+                        try {
+                            ApiClient.getService().deletePost(post.id)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
+            chatDao.deleteAllRooms()
+            chatDao.deleteAllMessages()
+            userDao.deleteAllUsers()
+            postDao.deleteAllPosts()
+            commentDao.deleteAllComments()
+            visitorDao.deleteAllVisitors()
+            missionDao.deleteAllMissions()
+            legendsDao.deleteAllLegends()
+
+            _selectedRoomId.value = null
+            _currentScreen.value = Screen.Splash
+            _selectedProfileUser.value = null
+            _currentTab.value = DashboardTab.PublicSquare
+            _missionsSubTab.value = 0
+            _showEditProfileDialog.value = false
+            _selectedCommentsPostId.value = null
+            _showDailyWelcome.value = false
+            _showExitSummary.value = false
+            _showSyncSettingsDialog.value = false
+            _isConnectingToBackend.value = false
+            resetQuiz()
+
+            _toastMessage.emit("Database cleared successfully. Starting clean slate!")
+        }
+    }
+
     // Database pre-population logic
     private fun prepopulateDb() {
+        if (true) return // Completely clean start, no predefined users inside the database
         viewModelScope.launch {
             // Clean up legacy dummy IDs from previous compilations
             userDao.deleteUserById("user_test_citizen")

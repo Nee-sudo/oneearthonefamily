@@ -12,7 +12,19 @@ export const getRooms = async (req: Request, res: Response) => {
     
     // Sort in memory to guarantee no missing index runtime error
     rooms.sort((a, b) => b.lastMessageTime - a.lastMessageTime);
-    res.status(200).json(rooms);
+
+    // Apply filtering by participant name to ensure conversations are only visible to the participants
+    let filteredRooms = rooms;
+    if (req.query.name) {
+      const searchName = String(req.query.name).toLowerCase().trim();
+      filteredRooms = rooms.filter(r => {
+        if (!r.participantName) return false;
+        const parts = r.participantName.split(" | ");
+        return parts.some(part => part.toLowerCase().trim() === searchName);
+      });
+    }
+
+    res.status(200).json(filteredRooms);
   } catch (error: any) {
     console.error("Firestore getRooms Error:", error);
     res.status(500).json({ error: error.message });
@@ -204,3 +216,35 @@ export const archiveRoom = async (req: Request, res: Response) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+export const deleteRoom = async (req: Request, res: Response) => {
+  try {
+    const { roomId } = req.params;
+    const db = getFirestoreDb();
+    
+    // 1. Delete matching messages
+    const messagesQuery = await db.collection('chatMessages').where('roomId', '==', Number(roomId)).get();
+    for (const doc of messagesQuery.docs) {
+      await doc.ref.delete();
+    }
+
+    // 2. Delete the room document
+    const roomRef = db.collection('chatRooms').doc(String(roomId));
+    const roomSnap = await roomRef.get();
+    if (roomSnap.exists) {
+      await roomRef.delete();
+    } else {
+      // Look up room using where clause just in case
+      const query = await db.collection('chatRooms').where('id', '==', Number(roomId)).get();
+      if (!query.empty) {
+        await query.docs[0].ref.delete();
+      }
+    }
+
+    res.status(200).json({ success: true });
+  } catch (error: any) {
+    console.error("Firestore deleteRoom Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+

@@ -67,7 +67,7 @@ interface OneEarthApiService {
 
     // Messaging Endpoints
     @GET("api/chat/rooms")
-    suspend fun getChatRooms(): List<ChatRoomEntity>
+    suspend fun getChatRooms(@Query("name") name: String?): List<ChatRoomEntity>
 
     @POST("api/chat/rooms")
     suspend fun createChatRoom(@Body room: ChatRoomEntity): ChatRoomEntity
@@ -77,6 +77,9 @@ interface OneEarthApiService {
 
     @POST("api/chat/rooms/{roomId}/messages")
     suspend fun sendChatMessage(@Path("roomId") roomId: Int, @Body message: ChatMessageEntity): ChatMessageEntity
+
+    @DELETE("api/chat/rooms/{roomId}")
+    suspend fun deleteChatRoom(@Path("roomId") roomId: Int): Map<String, Boolean>
 }
 
 // ==========================================
